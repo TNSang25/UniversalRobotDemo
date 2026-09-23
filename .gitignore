@@ -1,0 +1,19 @@
+# C/C++
+build/
+install/
+log/
+compile_commands.json
+
+# ROS 2
+*.log
+*.sqlite3
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Python
+__pycache__/
+*.pyc
