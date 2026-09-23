@@ -1,7 +1,3 @@
-# UniversalRobotDemo
-
-Dự án này là không gian làm việc (workspace) dành cho mô phỏng tay máy Universal Robots (UR) trên Gazebo (Ignition) và sử dụng MoveIt 2 để lên kế hoạch quỹ đạo tại ROS 2. 
-
 ## 📦 Cấu trúc Package
 
 Dự án bao gồm 3 package chính như sau:
