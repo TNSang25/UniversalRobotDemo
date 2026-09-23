@@ -1,4 +1,4 @@
-## 📦 Cấu trúc Package
+## Cấu trúc Package
 
 Gồm 3 package chính:
 
@@ -16,7 +16,7 @@ Chứa các node (viết bằng C++) tương tác với `MoveGroupInterface` c�
 
 ---
 
-## 🚀 Hướng dẫn chạy
+## Hướng dẫn chạy
 
 ### Yêu cầu ban đầu
 1. Mở một terminal, di chuyển vào workspace và build các package:
@@ -31,7 +31,7 @@ Chứa các node (viết bằng C++) tương tác với `MoveGroupInterface` c�
    ```
    *Lưu ý: Có thể đổi `ur_type` thành mẫu tay máy cần (vd: `ur3e`, `ur10e`).*
 
-### 1️⃣ Vẽ Hình Tròn (Circle)
+### Vẽ Hình Tròn (Circle)
 Mở một terminal mới, source môi trường và chạy node vẽ hình tròn. Node này sẽ tính toán tọa độ Descartes theo hàm sin/cos để di chuyển đầu cuối tay máy theo dạng vòng tròn bán kính 10cm.
 
 ```bash
@@ -41,7 +41,7 @@ ros2 launch ur_trajectory_drawer trajectory_drawer.launch.py
 ```
 *Kết quả:* RViz hiện lên một đường marker dạng hình tròn màu đỏ, sau đó robot bắt đầu thực thi chuyển động theo vòng tròn đó.
 
-### 2️⃣ Vẽ Chữ S
+### Vẽ Chữ S
 Mở một terminal mới (hoặc dùng terminal sau khi chạy xong node hình tròn), chạy node vẽ chữ S. Node này sẽ điều khiển tay máy ghép 2 nửa đường tròn lại để tạo thành chữ S chiều cao tổng cộng khoảng 20cm.
 
 ```bash
