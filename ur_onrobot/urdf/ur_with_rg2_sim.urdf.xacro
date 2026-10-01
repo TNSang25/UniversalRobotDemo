@@ -1,0 +1,6 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://wiki.ros.org/xacro" name="ur_with_rg2">
+  <xacro:arg name="sim_ignition" default="true"/>
+  <xacro:arg name="sim_gazebo" default="false"/>
+  <xacro:include filename="$(find ur_onrobot)/urdf/ur_with_rg2.urdf.xacro"/>
+</robot>

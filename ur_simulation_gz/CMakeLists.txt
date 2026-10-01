@@ -10,7 +10,7 @@ option(
   OFF
 )
 
-install(DIRECTORY config launch
+install(DIRECTORY config launch world
   DESTINATION share/${PROJECT_NAME}
 )
 

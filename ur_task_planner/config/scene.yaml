@@ -1,0 +1,74 @@
+# Scene description shared by skill_executor_node and llm_planner_node.
+#
+# All positions are expressed in the Gazebo world frame and must match
+# ur_simulation_gz/world/ur_table.sdf and the spawn pose used in
+# ur_simulation_gz/launch/ur3e_rg2_table.launch.py.
+# Keep every number a float (0.0, not 0): ROS 2 rejects mixed int/float arrays.
+/**:
+  ros__parameters:
+    # Pose of the robot base_link in the Gazebo world (spawn_x, spawn_y, spawn_z)
+    robot_base_position: [-0.35, 0.0, 0.81]
+
+    object_names: ["red_cube", "blue_cube", "yellow_cube"]
+    zone_names: ["zone_a", "zone_b", "zone_c"]
+    obstacle_names: ["table", "tray_a", "tray_b", "tray_c"]
+
+    objects:
+      red_cube:
+        position: [-0.10, 0.0, 0.825]    # centre of the cube
+        yaw: 0.5
+        size: [0.05, 0.05, 0.05]
+        color: [1.0, 0.0, 0.0]
+        description: "khối lập phương màu đỏ (red cube)"
+      blue_cube:
+        position: [-0.10, 0.15, 0.825]
+        yaw: 1.0
+        size: [0.05, 0.05, 0.05]
+        color: [0.0, 0.0, 1.0]
+        description: "khối lập phương màu xanh dương (blue cube)"
+      yellow_cube:
+        position: [-0.10, -0.15, 0.825]
+        yaw: -0.2
+        size: [0.05, 0.05, 0.05]
+        color: [1.0, 1.0, 0.0]
+        description: "khối lập phương màu vàng (yellow cube)"
+
+    zones:
+      zone_a:
+        position: [0.05, 0.15, 0.81]     # centre of the top face of the tray
+        description: "vùng A, ô A, khay A (zone A)"
+      zone_b:
+        position: [0.05, 0.0, 0.81]
+        description: "vùng B, ô B, khay B (zone B)"
+      zone_c:
+        position: [0.05, -0.15, 0.81]
+        description: "vùng C, ô C, khay C (zone C)"
+
+    # Static obstacles added to the MoveIt planning scene
+    obstacles:
+      table:
+        position: [0.0, 0.0, 0.4]
+        size: [1.0, 0.8, 0.8]
+      tray_a:
+        position: [0.05, 0.15, 0.805]
+        size: [0.15, 0.15, 0.01]
+      tray_b:
+        position: [0.05, 0.0, 0.805]
+        size: [0.15, 0.15, 0.01]
+      tray_c:
+        position: [0.05, -0.15, 0.805]
+        size: [0.15, 0.15, 0.01]
+
+    # Gripper geometry and motion tuning (skill_executor_node)
+    tcp_offset: 0.20               # tool0 -> finger tip distance [m]
+    approach_distance: 0.10        # height of the hover pose above the grasp pose [m]
+    place_clearance: 0.003         # release height above the zone surface [m]
+    collision_margin: 0.002        # objects are shrunk by this much in the planning scene [m]
+    gripper_open_position: 0.0     # finger joint values [m]
+    gripper_grasp_position: 0.023
+    gripper_closed_position: 0.04
+    verify_grasp: true
+    arm_velocity_scaling: 0.3
+    arm_acceleration_scaling: 0.3
+    cartesian_speed_scaling: 0.2
+    cartesian_jump_threshold: 5.0

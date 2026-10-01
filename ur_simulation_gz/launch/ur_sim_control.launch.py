@@ -124,6 +124,7 @@ def launch_setup(context, *args, **kwargs):
         name="rviz2",
         output="log",
         arguments=["-d", rviz_config_file],
+        parameters=[{"use_sim_time": True}],
         condition=IfCondition(launch_rviz),
     )
 
@@ -156,7 +157,6 @@ def launch_setup(context, *args, **kwargs):
         condition=UnlessCondition(start_joint_controller),
     )
 
-    # GZ nodes
     gz_spawn_entity = Node(
         package="ros_gz_sim",
         executable="create",
@@ -168,6 +168,9 @@ def launch_setup(context, *args, **kwargs):
             "ur",
             "-allow_renaming",
             "true",
+            "-x", LaunchConfiguration("spawn_x"),
+            "-y", LaunchConfiguration("spawn_y"),
+            "-z", LaunchConfiguration("spawn_z"),
         ],
     )
     gz_launch_description_with_gui = IncludeLaunchDescription(
@@ -325,6 +328,27 @@ def generate_launch_description():
             "world_file",
             default_value="empty.sdf",
             description="Gazebo world file (absolute path or filename from the gazebosim worlds collection) containing a custom world.",
+        )
+    )
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "spawn_x",
+            default_value="0.0",
+            description="Spawn coordinate X.",
+        )
+    )
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "spawn_y",
+            default_value="0.0",
+            description="Spawn coordinate Y.",
+        )
+    )
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "spawn_z",
+            default_value="0.0",
+            description="Spawn coordinate Z.",
         )
     )
 

@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://wiki.ros.org/xacro" name="ur_with_rg2">
+  <!-- Declared before ur.urdf.xacro so that these defaults win over its own -->
+  <xacro:arg name="ur_type" default="ur3e"/>
+  <xacro:arg name="joint_limit_params" default="$(find ur_onrobot)/config/$(arg ur_type)/joint_limits.yaml"/>
+
+  <xacro:include filename="$(find ur_description)/urdf/ur.urdf.xacro"/>
+  <xacro:include filename="$(find ur_onrobot)/urdf/onrobot_rg2_macro.xacro"/>
+
+  <xacro:onrobot_rg2 prefix="$(arg tf_prefix)" parent="$(arg tf_prefix)tool0">
+    <origin xyz="0 0 0" rpy="0 0 ${-pi/2}"/>
+  </xacro:onrobot_rg2>
+
+</robot>

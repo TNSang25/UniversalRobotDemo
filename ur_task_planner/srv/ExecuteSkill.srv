@@ -1,0 +1,9 @@
+string skill
+string object_name
+string zone
+---
+# SUCCESS, FAILED, PLANNING_FAILED, GRASP_FAILED, INVALID_SKILL, INVALID_OBJECT,
+# INVALID_ZONE, NOT_HOLDING_OBJECT, ALREADY_HOLDING_OBJECT, ZONE_OCCUPIED, OBJECT_LOST
+string status
+# Human readable detail, empty on success
+string message
