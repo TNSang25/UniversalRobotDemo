@@ -9,11 +9,16 @@
 #include <std_msgs/msg/string.hpp>
 #include <ur_task_planner/srv/execute_skill.hpp>
 #include <atomic>
+#include <chrono>
 #include <cmath>
+#include <functional>
 #include <map>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
+#include <string>
 #include <thread>
+#include <vector>
 
 using namespace std::chrono_literals;
 using moveit::planning_interface::MoveGroupInterface;
@@ -52,7 +57,13 @@ public:
     }
 
     void init_move_group() {
-        move_group_ = std::make_shared<MoveGroupInterface>(shared_from_this(), ARM_GROUP);
+        const double startup_timeout = param("startup_timeout_sec", 120.0);
+        if (!std::isfinite(startup_timeout) || startup_timeout <= 0.0) {
+            throw std::runtime_error("startup_timeout_sec must be a positive finite number");
+        }
+        const auto server_timeout = rclcpp::Duration::from_seconds(startup_timeout);
+        move_group_ = std::make_shared<MoveGroupInterface>(
+            shared_from_this(), ARM_GROUP, nullptr, server_timeout);
         move_group_->setPoseReferenceFrame(BASE_FRAME);
         move_group_->setEndEffectorLink(TOOL_LINK);
         move_group_->setPlanningTime(10.0);
@@ -60,8 +71,16 @@ public:
         move_group_->setMaxVelocityScalingFactor(arm_velocity_scaling_);
         move_group_->setMaxAccelerationScalingFactor(arm_acceleration_scaling_);
 
-        gripper_group_ = std::make_shared<MoveGroupInterface>(shared_from_this(), GRIPPER_GROUP);
+        gripper_group_ = std::make_shared<MoveGroupInterface>(
+            shared_from_this(), GRIPPER_GROUP, nullptr, server_timeout);
         gripper_group_->setPlanningTime(5.0);
+
+        // Wait for controller joint states and /clock instead of assuming a fast startup.
+        if (!move_group_->getCurrentState(startup_timeout) ||
+            !gripper_group_->getCurrentState(startup_timeout)) {
+            throw std::runtime_error(
+                "No current robot state; check /clock, /joint_states and active Gazebo controllers");
+        }
 
         planning_scene_ = std::make_shared<PlanningSceneInterface>();
         if (!add_scene_to_moveit()) {
@@ -676,11 +695,12 @@ int main(int argc, char** argv) {
     executor.add_node(node);
 
     // Initialize move_group after executor is setup (run in a separate thread so node is spinning)
+    std::atomic<bool> initialization_failed{false};
     std::thread init_thread([&]() {
-        rclcpp::sleep_for(std::chrono::seconds(2));
         try {
             node->init_move_group();
         } catch (const std::exception& e) {
+            initialization_failed = true;
             RCLCPP_FATAL(node->get_logger(), "Initialization failed: %s", e.what());
             rclcpp::shutdown();
         }
@@ -688,6 +708,8 @@ int main(int argc, char** argv) {
 
     executor.spin();
     init_thread.join();
-    rclcpp::shutdown();
-    return 0;
+    if (rclcpp::ok()) {
+        rclcpp::shutdown();
+    }
+    return initialization_failed ? 1 : 0;
 }

@@ -208,6 +208,9 @@ def launch_setup(context, *args, **kwargs):
             robot_description_kinematics,
             robot_description_planning,
             scene_params,
+            {"startup_timeout_sec": ParameterValue(
+                LaunchConfiguration("startup_timeout_sec"), value_type=float
+            )},
             {"use_sim_time": True},
         ],
     )
@@ -220,6 +223,7 @@ def launch_setup(context, *args, **kwargs):
     llm_planner_node = Node(
         package="ur_task_planner",
         executable="llm_planner_node.py",
+        condition=IfCondition(LaunchConfiguration("launch_llm")),
         output="screen",
         parameters=llm_planner_params,
     )
@@ -229,8 +233,10 @@ def launch_setup(context, *args, **kwargs):
 
 def generate_launch_description():
     declared_arguments = [
-        DeclareLaunchArgument("ur_type", default_value="ur3e"),
+        DeclareLaunchArgument("ur_type", default_value="ur3e", choices=["ur3e"]),
         DeclareLaunchArgument("launch_rviz", default_value="true"),
+        DeclareLaunchArgument("launch_llm", default_value="true"),
+        DeclareLaunchArgument("startup_timeout_sec", default_value="120.0"),
         DeclareLaunchArgument(
             "llm_model",
             default_value="",

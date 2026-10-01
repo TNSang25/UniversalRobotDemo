@@ -28,15 +28,21 @@
 #
 # Author: Denis Stogl
 
+import os
+
+from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
+    EmitEvent,
     IncludeLaunchDescription,
     OpaqueFunction,
     RegisterEventHandler,
+    SetEnvironmentVariable,
 )
 from launch.conditions import IfCondition, UnlessCondition
 from launch.event_handlers import OnProcessExit
+from launch.events import Shutdown
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import (
     Command,
@@ -66,6 +72,27 @@ def launch_setup(context, *args, **kwargs):
     launch_rviz = LaunchConfiguration("launch_rviz")
     gazebo_gui = LaunchConfiguration("gazebo_gui")
     world_file = LaunchConfiguration("world_file")
+    spawner_timeout = LaunchConfiguration("controller_spawner_timeout")
+    additional_controllers = LaunchConfiguration("additional_controllers").perform(context).split()
+
+    # Resolve package:// mesh URIs from the installed overlay, at any workspace path.
+    resource_paths = list(dict.fromkeys(
+        os.path.dirname(get_package_share_directory(package))
+        for package in [description_package.perform(context), "ur_description"]
+    ))
+    resource_environment = [
+        SetEnvironmentVariable(
+            name=name,
+            value=os.pathsep.join(resource_paths + [os.environ.get(name, "")]),
+        )
+        for name in ["IGN_GAZEBO_RESOURCE_PATH", "GZ_SIM_RESOURCE_PATH"]
+    ]
+    spawner_arguments = [
+        "--controller-manager", "/controller_manager",
+        "--controller-manager-timeout", spawner_timeout,
+        "--service-call-timeout", spawner_timeout,
+        "--switch-timeout", spawner_timeout,
+    ]
 
     initial_joint_controllers = PathJoinSubstitution(
         [FindPackageShare(runtime_config_package), "config", controllers_file]
@@ -131,7 +158,8 @@ def launch_setup(context, *args, **kwargs):
     joint_state_broadcaster_spawner = Node(
         package="controller_manager",
         executable="spawner",
-        arguments=["joint_state_broadcaster", "--controller-manager", "/controller_manager"],
+        arguments=["joint_state_broadcaster"] + spawner_arguments,
+        output="screen",
     )
 
     # Delay rviz start after `joint_state_broadcaster`
@@ -147,13 +175,15 @@ def launch_setup(context, *args, **kwargs):
     initial_joint_controller_spawner_started = Node(
         package="controller_manager",
         executable="spawner",
-        arguments=[initial_joint_controller, "-c", "/controller_manager"],
+        arguments=[initial_joint_controller] + spawner_arguments,
+        output="screen",
         condition=IfCondition(start_joint_controller),
     )
     initial_joint_controller_spawner_stopped = Node(
         package="controller_manager",
         executable="spawner",
-        arguments=[initial_joint_controller, "-c", "/controller_manager", "--stopped"],
+        arguments=[initial_joint_controller, "--inactive"] + spawner_arguments,
+        output="screen",
         condition=UnlessCondition(start_joint_controller),
     )
 
@@ -199,12 +229,41 @@ def launch_setup(context, *args, **kwargs):
         output="screen",
     )
 
-    nodes_to_start = [
-        robot_state_publisher_node,
+    controller_spawners = [
         joint_state_broadcaster_spawner,
-        delay_rviz_after_joint_state_broadcaster_spawner,
         initial_joint_controller_spawner_stopped,
         initial_joint_controller_spawner_started,
+    ]
+    if additional_controllers:
+        controller_spawners.append(Node(
+            package="controller_manager",
+            executable="spawner",
+            arguments=additional_controllers + spawner_arguments,
+            output="screen",
+        ))
+
+    def start_controllers(event, context):
+        if event.returncode != 0:
+            return [EmitEvent(event=Shutdown(reason="Failed to spawn robot in Gazebo"))]
+        return controller_spawners
+
+    def check_controller(event, context):
+        if event.returncode != 0:
+            return [EmitEvent(event=Shutdown(
+                reason="Controller startup failed; check controller_manager logs"
+            ))]
+        return []
+
+    controller_handlers = [
+        RegisterEventHandler(OnProcessExit(target_action=spawner, on_exit=check_controller))
+        for spawner in controller_spawners
+    ]
+    nodes_to_start = resource_environment + controller_handlers + [
+        robot_state_publisher_node,
+        delay_rviz_after_joint_state_broadcaster_spawner,
+        RegisterEventHandler(OnProcessExit(
+            target_action=gz_spawn_entity, on_exit=start_controllers
+        )),
         gz_spawn_entity,
         gz_launch_description_with_gui,
         gz_launch_description_without_gui,
@@ -216,6 +275,14 @@ def launch_setup(context, *args, **kwargs):
 
 def generate_launch_description():
     declared_arguments = []
+    declared_arguments.append(DeclareLaunchArgument(
+        "controller_spawner_timeout", default_value="120",
+        description="Seconds to wait for controller services and activation on slower machines.",
+    ))
+    declared_arguments.append(DeclareLaunchArgument(
+        "additional_controllers", default_value="",
+        description="Space-separated extra controllers to activate after spawning the robot.",
+    ))
     # UR specific arguments
     declared_arguments.append(
         DeclareLaunchArgument(

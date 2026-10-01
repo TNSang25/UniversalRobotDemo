@@ -10,7 +10,6 @@ find_package(ament_cmake REQUIRED)
 install(
   DIRECTORY
     urdf
-    launch
     config
     rviz
   DESTINATION share/${PROJECT_NAME}

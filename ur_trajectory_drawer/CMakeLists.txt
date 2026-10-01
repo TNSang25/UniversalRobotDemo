@@ -11,6 +11,7 @@ find_package(rclcpp REQUIRED)
 find_package(moveit_ros_planning_interface REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
+find_package(visualization_msgs REQUIRED)
 
 add_executable(trajectory_drawer_node src/trajectory_drawer_node.cpp)
 target_include_directories(trajectory_drawer_node PUBLIC
@@ -23,6 +24,7 @@ ament_target_dependencies(
   "moveit_ros_planning_interface"
   "geometry_msgs"
   "tf2_geometry_msgs"
+  "visualization_msgs"
 )
 
 add_executable(s_drawer_node src/s_drawer_node.cpp)
@@ -36,6 +38,7 @@ ament_target_dependencies(
   "moveit_ros_planning_interface"
   "geometry_msgs"
   "tf2_geometry_msgs"
+  "visualization_msgs"
 )
 
 install(TARGETS trajectory_drawer_node s_drawer_node

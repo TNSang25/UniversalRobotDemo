@@ -13,6 +13,8 @@ find_package(geometry_msgs REQUIRED)
 find_package(moveit_ros_planning_interface REQUIRED)
 find_package(control_msgs REQUIRED)
 find_package(rclcpp_action REQUIRED)
+find_package(moveit_msgs REQUIRED)
+find_package(shape_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
@@ -20,6 +22,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
 )
 
 add_executable(skill_executor_node src/skill_executor_node.cpp)
+target_compile_features(skill_executor_node PUBLIC cxx_std_17)
 ament_target_dependencies(skill_executor_node
   rclcpp
   std_msgs
@@ -27,8 +30,11 @@ ament_target_dependencies(skill_executor_node
   moveit_ros_planning_interface
   control_msgs
   rclcpp_action
+  moveit_msgs
+  shape_msgs
 )
-rosidl_target_interfaces(skill_executor_node ${PROJECT_NAME} "rosidl_typesupport_cpp")
+rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME} "rosidl_typesupport_cpp")
+target_link_libraries(skill_executor_node "${cpp_typesupport_target}")
 
 install(TARGETS
   skill_executor_node
@@ -37,6 +43,7 @@ install(TARGETS
 
 install(PROGRAMS
   scripts/llm_planner_node.py
+  scripts/check_install.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -55,6 +62,7 @@ install(DIRECTORY
 if(BUILD_TESTING)
   find_package(ament_cmake_pytest REQUIRED)
   ament_add_pytest_test(test_plan_validator test/test_plan_validator.py)
+  ament_add_pytest_test(test_installation test/test_installation.py)
 
   find_package(ament_lint_auto REQUIRED)
   # the following line skips the linter which checks for copyrights
