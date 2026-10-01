@@ -3,6 +3,16 @@
 Ra lệnh bằng tiếng Việt hoặc tiếng Anh để robot UR3e gắp và đặt các khối trong Gazebo.
 Ví dụ: **"Đưa khối màu đỏ vào vùng B."**
 
+## Các package
+
+| Package | Vai trò |
+|---|---|
+| `ur_description` | Mô hình URDF của các dòng tay máy UR |
+| `ur_onrobot` | UR3e gắn tay kẹp hai ngón, cấu hình controller |
+| `ur_simulation_gz` | Thế giới Gazebo (bàn, 3 khối, 3 khay A/B/C) và launch mô phỏng |
+| `ur_task_planner` | Robot skill, LLM planner, plan validator |
+| `ur_trajectory_drawer` | Vẽ hình tròn và chữ S, xem README ở nhánh `main` |
+
 ## 1. Cài phần mềm cần thiết
 
 Máy cần **Ubuntu 22.04**, **ROS 2 Humble** và **Gemini API key**.
