@@ -1,4 +1,4 @@
-# Điều khiển UR3e bằng ngôn ngữ tự nhiên
+# Điều khiển UR3e bằng LLM
 
 Người dùng ra lệnh bằng tiếng Việt hoặc tiếng Anh, ví dụ *"Đưa khối màu đỏ vào vùng B"*.
 LLM chuyển câu lệnh thành một kế hoạch JSON, chương trình kiểm tra kế hoạch rồi thực thi
@@ -29,7 +29,7 @@ bị từ chối và robot đứng yên.
 | `skill_executor_node` | Thực thi skill qua MoveIt 2, quản lý vật cản, ghi nhớ vị trí vật | Service `/execute_skill`; phát `/scene_state` |
 | `move_group` | Lập quỹ đạo, kiểm tra va chạm và giới hạn khớp | Action tới các controller |
 
-Các file đáng đọc trong `ur_task_planner`:
+Các file quan trọng trong `ur_task_planner`:
 
 | File | Nội dung |
 |---|---|
@@ -60,7 +60,7 @@ Trạng thái trả về: `SUCCESS`, `FAILED`, `PLANNING_FAILED`, `GRASP_FAILED`
 ## Yêu cầu
 
 - Ubuntu 22.04, ROS 2 Humble, Gazebo (Ignition) Fortress
-- Khoá API của Gemini trong biến môi trường `GEMINI_API_KEY`
+- API Key của Gemini trong biến môi trường `GEMINI_API_KEY`
 
 ```bash
 sudo apt install ros-humble-moveit ros-humble-ur ros-humble-ros-gz \
@@ -80,8 +80,6 @@ colcon build
 ```
 
 ## Thứ tự chạy
-
-Mô phỏng phải chạy trước, vì MoveIt cần các controller của Gazebo.
 
 **Terminal 1: mô phỏng**
 
@@ -115,9 +113,7 @@ ros2 topic echo /task_status --full-length
 
 ```bash
 source ~/workspaces/ur_gz/install/setup.bash
-ros2 topic pub --once /user_command std_msgs/msg/String "{data: 'Đưa khối màu đỏ vào vùng B.'}"
-ros2 topic pub --once /user_command std_msgs/msg/String "{data: 'Hãy lấy khối màu vàng và đặt nó vào ô A.'}"
-ros2 topic pub --once /user_command std_msgs/msg/String "{data: 'Move the blue cube to zone C.'}"
+ros2 topic pub --once /user_command std_msgs/msg/String "{data: 'Nội dung lệnh'}"
 ```
 
 Dừng bằng Ctrl+C ở terminal 2 rồi terminal 1. Khởi động lại để đưa các khối về chỗ cũ.
