@@ -102,8 +102,8 @@ chỉ cần chạy `rosdep update` bằng tài khoản người dùng.
 ## Clone và build
 
 Dùng terminal mới, source Humble; tránh source workspace cũ trước khi build.
-Không dùng virtualenv/Conda của dự án khác; ROS Humble từ apt dùng Python 3.10 hệ thống. Ví dụ bên
-dưới đặt repo trong `src/UniversalRobotDemo`. Repo cũng có thể nằm trực tiếp ở `src`
+Không dùng virtualenv/Conda của dự án khác; ROS Humble từ apt dùng Python 3.10 hệ thống.
+Ví dụ bên dưới đặt repo trong `src/UniversalRobotDemo`. Repo cũng có thể nằm trực tiếp ở `src`
 hoặc ở đường dẫn workspace khác; code không phụ thuộc tên tài khoản hay vị trí clone.
 
 ```bash
@@ -111,6 +111,10 @@ mkdir -p ~/workspaces/ur_gz/src
 cd ~/workspaces/ur_gz
 git clone --branch assignment_2 https://github.com/TNSang25/UniversalRobotDemo.git src/UniversalRobotDemo
 source /opt/ros/humble/setup.bash
+export PYTHONNOUSERSITE=1
+
+# Kiểm tra pytest hệ thống trước khi CMake đăng ký các test.
+python3 -m pytest --version
 
 # Cài đầy đủ dependency đã khai báo trong package.xml, không bỏ qua lỗi rosdep.
 rosdep install --from-paths src --ignore-src --rosdistro humble -y
@@ -118,6 +122,7 @@ rosdep install --from-paths src --ignore-src --rosdistro humble -y
 # Build tuần tự và giới hạn 2 tác vụ compiler để giảm mức sử dụng RAM.
 MAKEFLAGS=-j2 CMAKE_BUILD_PARALLEL_LEVEL=2 colcon build \
   --symlink-install --executor sequential --allow-overriding ur_description \
+  --cmake-force-configure \
   --cmake-args -DCMAKE_BUILD_TYPE=Release
 source install/setup.bash
 
@@ -129,10 +134,42 @@ ros2 run ur_task_planner check_install.py
 được apt cài gián tiếp cùng UR MoveIt. Khi bước kiểm tra thành công, sẽ có dòng
 `Installation OK`. Kiểm tra này không mở Gazebo và không gọi Gemini.
 
+`PYTHONNOUSERSITE=1` giúp Python dùng các package ROS/pytest hệ thống, tránh xung đột
+với package cài bằng pip trong `~/.local`. Biến này chỉ có hiệu lực trong terminal
+đã export, nên các lệnh chạy ở phần dưới cũng thiết lập lại nó.
+`--cmake-force-configure` yêu cầu CMake kiểm tra lại dependency và đăng ký test,
+kể cả khi lần build trước đã bỏ qua pytest.
+
 Nếu đã từng build repo ở vị trí khác, đổi ROS distro hoặc copy cả workspace từ máy cũ,
 hãy dùng workspace mới để build lại; không dùng lại `build/`, `install/`, `log/` cũ.
 Không clone thêm một bản repo vào workspace đã chứa cùng các package vì `colcon` sẽ
 báo trùng tên package. Nếu đã có clone thì dùng `git pull --ff-only` trên `assignment_2`.
+
+### Cập nhật một bản clone đã có
+
+Chạy các lệnh Git ở thư mục repo của bạn. Ví dụ cập nhật một workspace dùng build
+thường, với repo nằm trong `src/UniversalRobotDemo`:
+
+```bash
+cd ~/workspaces/ur_gz/src/UniversalRobotDemo
+git switch assignment_2
+git pull --ff-only
+
+cd ~/workspaces/ur_gz
+source /opt/ros/humble/setup.bash
+export PYTHONNOUSERSITE=1
+rosdep install --from-paths src --ignore-src --rosdistro humble -y
+MAKEFLAGS=-j2 CMAKE_BUILD_PARALLEL_LEVEL=2 colcon build \
+  --executor sequential --allow-overriding ur_description \
+  --cmake-force-configure --cmake-args -DCMAKE_BUILD_TYPE=Release
+source install/setup.bash
+ros2 run ur_task_planner check_install.py
+```
+
+Nếu repo đã nằm trực tiếp trong `~/workspaces/ur_gz/src`, chạy các lệnh Git tại đó.
+Nếu workspace đã dùng `--symlink-install`, thêm lại tuỳ chọn đó vào lệnh cập nhật.
+Giữ cùng chế độ build với lần build trước; nếu muốn đổi chế độ, dùng workspace sạch
+theo hướng dẫn clone ở trên.
 
 ## Thứ tự chạy
 
@@ -140,6 +177,7 @@ báo trùng tên package. Nếu đã có clone thì dùng `git pull --ff-only` t
 
 ```bash
 cd ~/workspaces/ur_gz
+export PYTHONNOUSERSITE=1
 source install/setup.bash
 ros2 launch ur_simulation_gz ur3e_rg2_table.launch.py launch_rviz:=false
 ```
@@ -160,6 +198,7 @@ Máy khởi động chậm có thể thêm `controller_spawner_timeout:=240`.
 
 ```bash
 cd ~/workspaces/ur_gz
+export PYTHONNOUSERSITE=1
 source install/setup.bash
 export GEMINI_API_KEY='DAN_KHOA_API_CUA_BAN_VAO_DAY'
 ros2 launch ur_task_planner task_planner.launch.py
@@ -180,6 +219,7 @@ Chế độ này chỉ nhận service `/execute_skill`, chưa xử lý `/user_co
 **Terminal 3: theo dõi kết quả**
 
 ```bash
+export PYTHONNOUSERSITE=1
 source ~/workspaces/ur_gz/install/setup.bash
 ros2 topic echo /task_status --full-length
 ```
@@ -187,6 +227,7 @@ ros2 topic echo /task_status --full-length
 **Terminal 4: gửi lệnh**, từng lệnh một, đợi lệnh trước xong:
 
 ```bash
+export PYTHONNOUSERSITE=1
 source ~/workspaces/ur_gz/install/setup.bash
 ros2 topic pub --once /user_command std_msgs/msg/String "{data: 'Nội dung lệnh'}"
 ```
@@ -226,6 +267,9 @@ ros2 launch ur_task_planner task_planner.launch.py llm_model:=gemini-flash-lite-
 Chạy test validator và kiểm tra cài đặt:
 
 ```bash
+cd ~/workspaces/ur_gz
+export PYTHONNOUSERSITE=1
+source install/setup.bash
 colcon test --packages-select ur_task_planner \
   --ctest-args -R 'test_plan_validator|test_installation'
 colcon test-result --verbose
@@ -239,7 +283,7 @@ colcon test-result --verbose
 | `Cannot locate rosdep definition` | Dùng nhánh `assignment_2` mới nhất, `rosdep update`, rồi chạy lại lệnh cài dependency. |
 | `Package ... not found`, `ModuleNotFoundError` | Source `/opt/ros/humble/setup.bash` và `install/setup.bash` của đúng workspace trong mỗi terminal; chạy `check_install.py`. |
 | `file INSTALL cannot find .../ur_onrobot/launch` | Đây là lỗi của phiên bản cũ; pull bản sửa và build lại trong workspace sạch. |
-| Pytest lỗi do plugin trong `~/.local` | Thử `PYTHONNOUSERSITE=1 colcon test ...` để dùng các module Python hệ thống thay cho bản cài pip của người dùng. |
+| CMake báo `pytest was not found`, hoặc Python lỗi `_pytest.scope` | Cài `python3-pytest` bằng apt, chạy `export PYTHONNOUSERSITE=1` và `python3 -m pytest --version`; build lại với `--cmake-force-configure` để đăng ký test. |
 | `cc1plus` bị `Killed` | Thiếu RAM khi biên dịch; giảm `MAKEFLAGS=-j1`, `CMAKE_BUILD_PARALLEL_LEVEL=1`, giữ `--executor sequential`. |
 | Không có `/controller_manager`, `/clock` hoặc `/joint_states` | Kiểm tra lỗi Gazebo/plugin ở terminal 1, đủ `ign_ros2_control` và đúng Fortress; chưa chạy terminal 2. |
 | `No current robot state` | Kiểm tra controller đang active, `/clock` có dữ liệu, mọi terminal có cùng `ROS_DOMAIN_ID`; đợi mô phỏng trước khi chạy planner. |
