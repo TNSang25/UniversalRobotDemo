@@ -1,52 +1,159 @@
-## 📦 Cấu trúc Package
+# Điều khiển UR3e bằng ngôn ngữ tự nhiên
 
-Dự án bao gồm 3 package chính như sau:
+Người dùng ra lệnh bằng tiếng Việt hoặc tiếng Anh, ví dụ *"Đưa khối màu đỏ vào vùng B"*.
+LLM chuyển câu lệnh thành một kế hoạch JSON, chương trình kiểm tra kế hoạch rồi thực thi
+từng skill bằng MoveIt 2 trên tay máy UR3e trong Gazebo.
 
-### 1. `ur_description`
-Đây là package chứa toàn bộ các file cấu hình về URDF, Xacro, lưới vật thể (meshes), và các thông số vật lý của các dòng tay máy UR khác nhau (ur3, ur3e, ur5, ur5e, ur10, ur10e...). 
-- **Chức năng:** Cung cấp mô hình 3D, động học và động lực học của robot để MoveIt 2 và Gazebo có thể hiểu và mô phỏng chính xác hình dáng vật lý của tay máy.
+```
+Câu lệnh  →  LLM (Gemini)  →  JSON plan  →  Plan Validator  →  Skill Executor  →  MoveIt 2  →  UR3e
+```
 
-### 2. `ur_simulation_gz`
-Đây là package mô phỏng tay máy UR tích hợp với Gazebo (phiên bản mới) và MoveIt 2. 
-- **Chức năng:** Bao gồm các file launch dùng để khởi động môi trường mô phỏng Gazebo, nạp mô hình robot vào thế giới giả lập, khởi chạy các controller (chẳng hạn như `joint_trajectory_controller`), và khởi động hệ thống MoveIt 2 để sẵn sàng nhận lệnh điều khiển.
+LLM không điều khiển robot trực tiếp. Kế hoạch có skill, vật thể hoặc vùng không hợp lệ
+bị từ chối và robot đứng yên.
 
-### 3. `ur_trajectory_drawer`
-Đây là package chứa các node (viết bằng C++) tương tác với `MoveGroupInterface` của MoveIt 2 để điều khiển đầu cuối của tay máy (end-effector: `tool0`) di chuyển theo một quỹ đạo đặc biệt trong không gian.
-- **Chức năng:** Tính toán đường dẫn tọa độ Descartes (Cartesian path) và điều khiển robot di chuyển. Nó có thể yêu cầu tay máy vẽ các hình dạng nhất định (đường tròn, chữ S). Nó cũng sử dụng `visualization_msgs::msg::Marker` để hiển thị trước quỹ đạo sắp vẽ bằng đường màu đỏ trên RViz.
+## Các package
 
----
+| Package | Vai trò |
+|---|---|
+| `ur_description` | Mô hình URDF của các dòng tay máy UR |
+| `ur_onrobot` | UR3e gắn tay kẹp hai ngón, cấu hình controller |
+| `ur_simulation_gz` | Thế giới Gazebo (bàn, 3 khối, 3 khay A/B/C) và launch mô phỏng |
+| `ur_task_planner` | Robot skill, LLM planner, plan validator |
+| `ur_trajectory_drawer` | Vẽ hình tròn và chữ S, xem README ở nhánh `main` |
 
-## 🚀 Hướng dẫn chạy
+## Các node chính
 
-### Yêu cầu ban đầu
-1. Mở một terminal, di chuyển vào workspace và build các package:
-   ```bash
-   cd ~/workspaces/ur_gz
-   colcon build
-   source install/setup.bash
-   ```
-2. Khởi động môi trường mô phỏng (Gazebo + RViz + MoveIt):
-   ```bash
-   ros2 launch ur_simulation_gz ur_sim_moveit.launch.py ur_type:=ur5e
-   ```
-   *Lưu ý: Bạn có thể đổi `ur_type` thành mẫu tay máy bạn cần (vd: `ur3e`, `ur10e`).*
+| Node | Nhiệm vụ | Giao tiếp |
+|---|---|---|
+| `llm_planner_node` | Gọi LLM, kiểm tra plan, gọi lần lượt từng skill | Nhận `/user_command`, `/scene_state`; phát `/task_status` |
+| `skill_executor_node` | Thực thi skill qua MoveIt 2, quản lý vật cản, ghi nhớ vị trí vật | Service `/execute_skill`; phát `/scene_state` |
+| `move_group` | Lập quỹ đạo, kiểm tra va chạm và giới hạn khớp | Action tới các controller |
 
-### 1️⃣ Vẽ Hình Tròn (Circle)
-Mở một terminal mới, source môi trường và chạy node vẽ hình tròn. Node này sẽ tính toán tọa độ Descartes theo hàm sin/cos để di chuyển đầu cuối tay máy theo dạng vòng tròn bán kính 10cm.
+Các file đáng đọc trong `ur_task_planner`:
+
+| File | Nội dung |
+|---|---|
+| `src/skill_executor_node.cpp` | Các skill |
+| `scripts/llm_planner_node.py` | Nhận lệnh, gọi LLM, điều phối |
+| `scripts/plan_validator.py` | Luật kiểm tra plan |
+| `config/scene.yaml` | Vật thể, vùng, vật cản; phải khớp với `ur_simulation_gz/world/ur_table.sdf` |
+| `config/joint_limits.yaml` | Giới hạn khớp dùng cho MoveIt |
+
+## Các skill
+
+| Skill | Tham số |
+|---|---|
+| `home` | không |
+| `pick` | `object` |
+| `place` | `object`, `zone` |
+| `move_above` | `object` |
+| `move_to_zone` | `zone` |
+| `open_gripper`, `close_gripper` | không |
+
+Vật thể: `red_cube`, `blue_cube`, `yellow_cube`. Vùng: `zone_a`, `zone_b`, `zone_c` và
+vùng tạm `zone_temp` trên mặt bàn. Mỗi vùng chứa một vật.
+
+Trạng thái trả về: `SUCCESS`, `FAILED`, `PLANNING_FAILED`, `GRASP_FAILED`, `OBJECT_LOST`,
+`INVALID_SKILL`, `INVALID_OBJECT`, `INVALID_ZONE`, `NOT_HOLDING_OBJECT`,
+`ALREADY_HOLDING_OBJECT`, `ZONE_OCCUPIED`.
+
+## Yêu cầu
+
+- Ubuntu 22.04, ROS 2 Humble, Gazebo (Ignition) Fortress
+- Khoá API của Gemini trong biến môi trường `GEMINI_API_KEY`
+
+```bash
+sudo apt install ros-humble-moveit ros-humble-ur ros-humble-ros-gz \
+  ros-humble-ign-ros2-control ros-humble-ros2-controllers
+```
+
+## Build
+
+Đặt repo này vào thư mục `src` của workspace:
+
+```bash
+mkdir -p ~/workspaces/ur_gz
+cd ~/workspaces/ur_gz
+git clone -b assignment_2 https://github.com/TNSang25/UniversalRobotDemo.git src
+source /opt/ros/humble/setup.bash
+colcon build
+```
+
+## Thứ tự chạy
+
+Mô phỏng phải chạy trước, vì MoveIt cần các controller của Gazebo.
+
+**Terminal 1: mô phỏng**
 
 ```bash
 cd ~/workspaces/ur_gz
 source install/setup.bash
-ros2 launch ur_trajectory_drawer trajectory_drawer.launch.py
+ros2 launch ur_simulation_gz ur3e_rg2_table.launch.py launch_rviz:=false
 ```
-*Kết quả:* Bạn sẽ thấy RViz hiện lên một đường marker dạng hình tròn màu đỏ, sau đó robot bắt đầu thực thi chuyển động theo vòng tròn đó.
 
-### 2️⃣ Vẽ Chữ S
-Mở một terminal mới (hoặc dùng terminal sau khi chạy xong node hình tròn), chạy node vẽ chữ S. Node này sẽ điều khiển tay máy ghép 2 nửa đường tròn lại để tạo thành chữ S chiều cao tổng cộng khoảng 20cm.
+Đợi dòng `Successfully started gripper_trajectory_controller`.
+
+**Terminal 2: MoveIt, RViz, skill executor, LLM planner**
 
 ```bash
 cd ~/workspaces/ur_gz
 source install/setup.bash
-ros2 launch ur_trajectory_drawer s_drawer.launch.py
+export GEMINI_API_KEY=<key>
+ros2 launch ur_task_planner task_planner.launch.py
 ```
-*Kết quả:* Bạn sẽ thấy đường viền Marker màu đỏ dạng chữ S xuất hiện trên RViz và robot sẽ mượt mà vẽ theo quỹ đạo hình chữ S đó.
+
+Đợi dòng `Skill Executor Node ready.`
+
+**Terminal 3: theo dõi kết quả**
+
+```bash
+source ~/workspaces/ur_gz/install/setup.bash
+ros2 topic echo /task_status --full-length
+```
+
+**Terminal 4: gửi lệnh**, từng lệnh một, đợi lệnh trước xong:
+
+```bash
+source ~/workspaces/ur_gz/install/setup.bash
+ros2 topic pub --once /user_command std_msgs/msg/String "{data: 'Đưa khối màu đỏ vào vùng B.'}"
+ros2 topic pub --once /user_command std_msgs/msg/String "{data: 'Hãy lấy khối màu vàng và đặt nó vào ô A.'}"
+ros2 topic pub --once /user_command std_msgs/msg/String "{data: 'Move the blue cube to zone C.'}"
+```
+
+Dừng bằng Ctrl+C ở terminal 2 rồi terminal 1. Khởi động lại để đưa các khối về chỗ cũ.
+
+## Lệnh phối hợp nhiều vật thể
+
+Ghi mã sinh viên và cách sắp xếp tương ứng vào `user_context` trong
+`ur_task_planner/config/scene.yaml`, build lại, rồi gửi:
+
+```bash
+ros2 topic pub --once /user_command std_msgs/msg/String \
+  "{data: 'Arrange all objects according to my student ID.'}"
+```
+
+LLM tự sinh kế hoạch nhiều bước. Khi vùng đích đang có vật khác, kế hoạch đưa vật đó sang
+`zone_temp` trước. Plan bị validator từ chối được gửi lại cho LLM kèm lý do để sửa một lần.
+
+## Tuỳ chọn
+
+Gọi thẳng một skill, không qua LLM:
+
+```bash
+ros2 service call /execute_skill ur_task_planner/srv/ExecuteSkill \
+  "{skill: 'pick', object_name: 'red_cube', zone: ''}"
+```
+
+Chọn model. Mặc định là `$GEMINI_MODEL`, nếu không đặt thì `gemini-flash-latest`; khi model
+quá tải hoặc hết hạn mức, node tự chuyển sang `gemini-flash-lite-latest`:
+
+```bash
+ros2 launch ur_task_planner task_planner.launch.py llm_model:=gemini-flash-lite-latest
+```
+
+Chạy unit test của validator:
+
+```bash
+colcon test --packages-select ur_task_planner
+colcon test-result --verbose
+```
