@@ -109,6 +109,3 @@ ros2 topic echo /task_status --full-length
 ```
 
 Dừng chương trình bằng **Ctrl+C ở terminal 2, rồi terminal 1**.
-
-Hướng dẫn cập nhật repo, xử lý lỗi và thông tin kỹ thuật nằm trong
-[tài liệu chi tiết](docs/SETUP_DETAILS.md).
