@@ -187,6 +187,11 @@ def launch_setup(context, *args, **kwargs):
         name="rviz2_moveit",
         output="log",
         arguments=["-d", rviz_config_file],
+        # Qt applies the desktop locale in RViz. Comma-decimal locales (e.g.
+        # vi_VN) make MoveIt's parameter reload parse doubles as strings.
+        # LC_ALL also overrides an inherited LC_ALL; C.UTF-8 exists on Ubuntu
+        # and preserves UTF-8 while using a dot as the decimal separator.
+        additional_env={"LC_ALL": "C.UTF-8"},
         parameters=[
             robot_description,
             robot_description_semantic,

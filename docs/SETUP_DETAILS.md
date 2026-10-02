@@ -290,6 +290,7 @@ colcon test-result --verbose
 | Không có `/controller_manager`, `/clock` hoặc `/joint_states` | Kiểm tra lỗi Gazebo/plugin ở terminal 1, đủ `ign_ros2_control` và đúng Fortress; chưa chạy terminal 2. |
 | `No current robot state` | Kiểm tra controller đang active, `/clock` có dữ liệu, mọi terminal có cùng `ROS_DOMAIN_ID`; đợi mô phỏng trước khi chạy planner. |
 | Gazebo/RViz lỗi OpenGL | Kiểm tra driver và đồ hoạ máy ảo; dùng `gazebo_gui:=false` và `launch_rviz:=false` để kiểm tra headless. |
+| RViz mở nhưng không có robot; `loadRobotModel` báo `double` / `string` | Locale dùng dấu phẩy thập phân (ví dụ tiếng Việt) khiến RViz đọc sai tham số số. Pull và build lại bản mới: launch đã đặt `LC_ALL=C.UTF-8` riêng cho RViz. Với bản cũ, chạy `LC_ALL=C.UTF-8 ros2 launch ur_task_planner task_planner.launch.py`. |
 | `LLM_ERROR`, HTTP 403/404/429 | Kiểm tra Gemini key, quyền truy cập model, hạn mức và Internet; đổi `llm_model` nếu cần. Lỗi API không phải lỗi build. |
 
 Sau khi source workspace, kiểm tra ROS ở terminal riêng:
@@ -304,6 +305,9 @@ ros2 service list | grep execute_skill
 Ba controller nói trên phải ở trạng thái `active`. Không cần một tiến trình
 `ros2_control_node` riêng: plugin `ign_ros2_control` trong Gazebo tạo controller manager.
 
+Lỗi locale của RViz được ghi nhận trong [MoveIt #1882](https://github.com/moveit/moveit2/issues/1882).
+Không đổi giới hạn khớp trong YAML thành chuỗi để tránh lỗi: MoveIt cần giá trị số.
+
 ### Phạm vi kiểm thử và lỗi còn lại
 
 Bản sửa được kiểm tra trên Ubuntu 22.04 với source sạch ở hai cấu trúc thư mục
@@ -315,6 +319,9 @@ hệ thống làm underlay. Các kiểm tra đã đạt:
   107 tests, 0 errors, 0 failures (bao gồm số đếm của CTest và pytest).
 - Gazebo headless, ba controller active, `/clock`, `/joint_states`, MoveIt và
   LLM planner khởi động; các skill `home`, `open_gripper`, `close_gripper` thành công.
+- RViz với mô phỏng đang chạy: tái hiện lỗi `loadRobotModel` dưới locale `vi_VN.UTF-8`,
+  rồi xác nhận bản sửa hiển thị robot và planning scene ngay cả khi terminal đặt
+  `LC_ALL=vi_VN.UTF-8`; tham số `max_position` vẫn là số thực `1.5708`.
 
 Chưa kiểm thử gọi Gemini API thực tế, toàn bộ chuỗi gắp/đặt hoặc GPU/giao diện trên
 máy thứ hai. Model, API key và hạn mức cần được kiểm tra riêng trên máy chạy.
