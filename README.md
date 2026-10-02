@@ -40,7 +40,7 @@ Chỉ làm bước này nếu chưa có repo trong workspace:
 ```bash
 mkdir -p ~/workspaces/ur_gz/src
 cd ~/workspaces/ur_gz
-git clone -b assignment_2 https://github.com/TNSang25/UniversalRobotDemo.git src/UniversalRobotDemo
+git clone -b assignment_2 https://github.com/TNSang25/UniversalRobotDemo.git src
 ```
 
 ## 3. Build
