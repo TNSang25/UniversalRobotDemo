@@ -82,7 +82,7 @@ Thay `YOUR_API_KEY` bằng Gemini API key của bạn:
 cd ~/workspaces/ur_gz
 export PYTHONNOUSERSITE=1
 source install/setup.bash
-export GEMINI_API_KEY='YOUR_API_KEY'
+export GEMINI_API_KEY=''
 ros2 launch ur_task_planner task_planner.launch.py
 ```
 
