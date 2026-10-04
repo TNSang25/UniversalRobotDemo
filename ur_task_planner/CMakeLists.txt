@@ -19,6 +19,8 @@ find_package(rosidl_default_generators REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/ExecuteSkill.srv"
+  "msg/ObservedScene.msg"
+  DEPENDENCIES std_msgs geometry_msgs
 )
 
 add_executable(skill_executor_node src/skill_executor_node.cpp)
@@ -42,6 +44,7 @@ install(TARGETS
 )
 
 install(PROGRAMS
+  scripts/scene_observer_node.py
   scripts/llm_planner_node.py
   scripts/check_install.py
   DESTINATION lib/${PROJECT_NAME}
@@ -50,6 +53,8 @@ install(PROGRAMS
 # Imported by llm_planner_node.py, has to be installed next to it
 install(FILES
   scripts/plan_validator.py
+  scripts/scene_geometry.py
+  scripts/cube_perception.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -61,6 +66,8 @@ install(DIRECTORY
 
 if(BUILD_TESTING)
   find_package(ament_cmake_pytest REQUIRED)
+  ament_add_pytest_test(test_llm_occupancy test/test_llm_occupancy.py)
+  ament_add_pytest_test(test_scene_observation test/test_scene_observation.py)
   ament_add_pytest_test(test_plan_validator test/test_plan_validator.py)
   ament_add_pytest_test(test_installation test/test_installation.py)
 

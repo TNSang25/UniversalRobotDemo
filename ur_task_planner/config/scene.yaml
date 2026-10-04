@@ -9,6 +9,14 @@
     # Pose of the robot base_link in the Gazebo world (spawn_x, spawn_y, spawn_z)
     robot_base_position: [-0.35, 0.0, 0.81]
 
+    use_perception: false
+    table_surface_z: 0.8
+    table_placement_bounds: [-0.25, 0.015, -0.34, 0.34]
+    placement_gap: 0.015
+    robot_keepout_radius: 0.12
+    placement_max_reach: 0.56
+    observation_timeout_sec: 5.0
+
     object_names: ["red_cube", "blue_cube", "yellow_cube"]
     zone_names: ["zone_a", "zone_b", "zone_c"]
     obstacle_names: ["table", "tray_a", "tray_b", "tray_c"]

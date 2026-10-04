@@ -18,6 +18,8 @@ if(BUILD_TESTING)
   find_package(launch_testing_ament_cmake)
   find_package(ament_cmake_pytest REQUIRED)
 
+  ament_add_pytest_test(test_randomized_world test/test_randomized_world.py TIMEOUT 30)
+
   if(${UR_SIM_INTEGRATION_TESTS})
     add_launch_test(test/test_gz.py
       TIMEOUT

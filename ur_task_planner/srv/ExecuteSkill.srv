@@ -1,9 +1,14 @@
 string skill
 string object_name
 string zone
+# Only place_on_table: [x, y] in gazebo_world; surface height comes from config.
+float64[] position
 ---
 # SUCCESS, FAILED, PLANNING_FAILED, GRASP_FAILED, INVALID_SKILL, INVALID_OBJECT,
-# INVALID_ZONE, NOT_HOLDING_OBJECT, ALREADY_HOLDING_OBJECT, ZONE_OCCUPIED, OBJECT_LOST
+# INVALID_ZONE, INVALID_POSITION, OBSERVATION_FAILED, NOT_HOLDING_OBJECT,
+# ALREADY_HOLDING_OBJECT, ZONE_OCCUPIED, OBJECT_LOST
 string status
 # Human readable detail, empty on success
 string message
+# Authoritative scene snapshot after this skill (also published on /scene_state).
+string scene_state

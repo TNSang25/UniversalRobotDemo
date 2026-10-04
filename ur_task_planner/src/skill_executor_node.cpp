@@ -8,6 +8,12 @@
 #include <std_msgs/msg/color_rgba.hpp>
 #include <std_msgs/msg/string.hpp>
 #include <ur_task_planner/srv/execute_skill.hpp>
+#include <ur_task_planner/msg/observed_scene.hpp>
+#include <condition_variable>
+#include <mutex>
+#include <set>
+#include <iomanip>
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -52,6 +58,17 @@ public:
             rmw_qos_profile_services_default,
             callback_group_);
 
+        observation_group_ = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+        rclcpp::SubscriptionOptions observation_options;
+        observation_options.callback_group = observation_group_;
+        observation_subscription_ = this->create_subscription<ur_task_planner::msg::ObservedScene>(
+            "observed_scene", rclcpp::QoS(1),
+            [this](ur_task_planner::msg::ObservedScene::SharedPtr msg) {
+                std::lock_guard<std::mutex> lock(observation_mutex_);
+                latest_observation_ = msg;
+                observation_changed_.notify_all();
+            }, observation_options);
+
         state_publisher_ = this->create_publisher<std_msgs::msg::String>(
             "scene_state", rclcpp::QoS(1).transient_local());
     }
@@ -87,8 +104,8 @@ public:
             throw std::runtime_error("could not add the collision objects to the planning scene");
         }
 
-        ready_ = true;
         publish_scene_state();
+        ready_ = true;
         RCLCPP_INFO(this->get_logger(), "Skill Executor Node ready.");
     }
 
@@ -107,6 +124,7 @@ private:
 
     struct Zone {
         double x, y, z;  // centre of the surface, in the base_link frame
+        double size_x, size_y;
     };
 
     struct Result {
@@ -127,6 +145,16 @@ private:
     std::map<std::string, Zone> zones_;
     std::map<std::string, Box> obstacles_;
     std::string held_object_;
+    uint64_t state_revision_{0};
+    std::vector<double> base_, table_bounds_;
+    double table_surface_z_, placement_gap_, robot_keepout_, placement_reach_;
+    bool use_perception_, observed_{false};
+    double observation_timeout_;
+    rclcpp::CallbackGroup::SharedPtr observation_group_;
+    rclcpp::Subscription<ur_task_planner::msg::ObservedScene>::SharedPtr observation_subscription_;
+    ur_task_planner::msg::ObservedScene::SharedPtr latest_observation_;
+    std::mutex observation_mutex_;
+    std::condition_variable observation_changed_;
 
     double tcp_offset_;
     double approach_distance_;
@@ -172,6 +200,18 @@ private:
     // Positions of the configuration are given in the Gazebo world frame
     void load_scene() {
         const std::vector<double> base = vector_param("robot_base_position", 3);
+        base_ = base;
+        use_perception_ = param("use_perception", false);
+        observation_timeout_ = param("observation_timeout_sec", 5.0);
+        table_bounds_ = param("table_placement_bounds", std::vector<double>{-0.25, 0.015, -0.34, 0.34});
+        table_surface_z_ = param("table_surface_z", 0.8) - base[2];
+        placement_gap_ = param("placement_gap", 0.015);
+        robot_keepout_ = param("robot_keepout_radius", 0.12);
+        placement_reach_ = param("placement_max_reach", 0.56);
+        if (table_bounds_.size() != 4 || table_bounds_[0] >= table_bounds_[1] ||
+            table_bounds_[2] >= table_bounds_[3] || observation_timeout_ <= 0.0) {
+            throw std::runtime_error("invalid table placement bounds or observation timeout");
+        }
 
         for (const std::string& name : names_param("object_names")) {
             const std::string prefix = "objects." + name + ".";
@@ -186,13 +226,16 @@ private:
             object.color.g = color.size() > 1 ? color[1] : 0.5;
             object.color.b = color.size() > 2 ? color[2] : 0.5;
             object.color.a = 1.0;
-            object.location = LOCATION_TABLE;
+            object.location = use_perception_ ? LOCATION_UNKNOWN : LOCATION_TABLE;
             objects_[name] = object;
         }
 
         for (const std::string& name : names_param("zone_names")) {
             const std::vector<double> position = vector_param("zones." + name + ".position", 3);
-            zones_[name] = {position[0] - base[0], position[1] - base[1], position[2] - base[2]};
+            const auto size = param("zones." + name + ".size", std::vector<double>{0.15, 0.15});
+            if (size.size() != 2) throw std::runtime_error("zone size must be XY");
+            zones_[name] = {position[0] - base[0], position[1] - base[1], position[2] - base[2],
+                            size[0], size[1]};
         }
 
         for (const std::string& name : param("obstacle_names", std::vector<std::string>{})) {
@@ -276,6 +319,7 @@ private:
             collision_objects.push_back(make_collision_box(obstacle.first, obstacle.second));
         }
         for (const auto& object : objects_) {
+            if (object.second.location == LOCATION_UNKNOWN) continue;
             collision_objects.push_back(make_object(object.first));
             colors.push_back(make_color(object.first));
         }
@@ -309,16 +353,19 @@ private:
 
     std::string zone_occupant(const std::string& zone_name) const {
         for (const auto& object : objects_) {
-            if (object.second.location == zone_name) {
+            if (object.second.location != LOCATION_UNKNOWN && object.second.location != LOCATION_GRIPPER &&
+                overlaps_zone(object.second.box.x, object.second.box.y,
+                              footprint_radius(object.second.box), zones_.at(zone_name))) {
                 return object.first;
             }
         }
         return "";
     }
 
-    void publish_scene_state() {
+    std::string scene_state_json() const {
         std::ostringstream json;
-        json << "{\"holding\": ";
+        json << std::setprecision(10);
+        json << "{\"revision\": " << state_revision_ << ", \"holding\": ";
         if (held_object_.empty()) {
             json << "null";
         } else {
@@ -330,10 +377,39 @@ private:
             json << (first ? "" : ", ") << "\"" << object.first << "\": \"" << object.second.location << "\"";
             first = false;
         }
+        json << "}, \"observed\": " << (observed_ ? "true" : "false") << ", \"positions\": {";
+        first = true;
+        for (const auto& entry : objects_) {
+            if (entry.second.location == LOCATION_UNKNOWN || entry.second.location == LOCATION_GRIPPER) continue;
+            const auto& box = entry.second.box;
+            json << (first ? "" : ", ") << "\"" << entry.first << "\": ["
+                 << box.x + base_[0] << ", " << box.y + base_[1] << ", " << box.z + base_[2] << "]";
+            first = false;
+        }
+        json << "}, \"zones\": {";
+        first = true;
+        for (const auto& zone : zones_) {
+            json << (first ? "" : ", ") << "\"" << zone.first << "\": [";
+            first = false;
+            bool first_occupant = true;
+            for (const auto& entry : objects_) {
+                const auto& object = entry.second;
+                if (object.location == LOCATION_UNKNOWN || object.location == LOCATION_GRIPPER) continue;
+                if (overlaps_zone(object.box.x, object.box.y, footprint_radius(object.box), zone.second)) {
+                    json << (first_occupant ? "" : ", ") << "\"" << entry.first << "\"";
+                    first_occupant = false;
+                }
+            }
+            json << "]";
+        }
         json << "}}";
+        return json.str();
+    }
 
+    void publish_scene_state() {
+        ++state_revision_;
         std_msgs::msg::String msg;
-        msg.data = json.str();
+        msg.data = scene_state_json();
         state_publisher_->publish(msg);
     }
 
@@ -360,6 +436,7 @@ private:
 
         response->status = result.status;
         response->message = result.message;
+        if (ready_) response->scene_state = scene_state_json();
         if (result.ok()) {
             RCLCPP_INFO(this->get_logger(), "Skill %s: SUCCESS", request->skill.c_str());
         } else {
@@ -369,6 +446,17 @@ private:
     }
 
     Result execute_skill(const ur_task_planner::srv::ExecuteSkill::Request& request) {
+        if (request.skill == "observe") {
+            return execute_observe();
+        }
+        if (use_perception_ && (request.skill == "pick" || request.skill == "place" ||
+                                request.skill == "place_on_table" || request.skill == "move_above")) {
+            Result observation = execute_observe();
+            if (!observation.ok()) return observation;
+        }
+        if (request.skill == "place_on_table") {
+            return execute_place_on_table(request.object_name, request.position);
+        }
         if (request.skill == "home") {
             return execute_home();
         } else if (request.skill == "open_gripper") {
@@ -519,6 +607,132 @@ private:
 
     // -------------------------------------------------------------------- skills
 
+    static double footprint_radius(const Box& box) {
+        return std::hypot(box.size_x, box.size_y) / 2.0;
+    }
+
+    static bool overlaps_zone(double x, double y, double radius, const Zone& zone) {
+        const double dx = std::max(std::abs(x - zone.x) - zone.size_x / 2.0, 0.0);
+        const double dy = std::max(std::abs(y - zone.y) - zone.size_y / 2.0, 0.0);
+        return std::hypot(dx, dy) <= radius;
+    }
+
+    Result execute_observe() {
+        if (!use_perception_) {
+            // Legacy world: the configured geometry and successful skills own the state.
+            return {"SUCCESS", "configured scene (camera observation disabled)"};
+        }
+        observed_ = false;
+        const auto started = this->now();
+        const auto deadline = std::chrono::steady_clock::now() +
+            std::chrono::duration<double>(observation_timeout_);
+        ur_task_planner::msg::ObservedScene::SharedPtr observation;
+        {
+            std::unique_lock<std::mutex> lock(observation_mutex_);
+            // Require an image captured AFTER this request, not merely a recently delivered image.
+            if (!observation_changed_.wait_until(lock, deadline, [&]() {
+                    if (!latest_observation_ ||
+                        rclcpp::Time(latest_observation_->header.stamp, started.get_clock_type()) <= started) return false;
+                    for (const auto& entry : objects_) {
+                        if (entry.first != held_object_ &&
+                            std::find(latest_observation_->object_names.begin(), latest_observation_->object_names.end(),
+                                      entry.first) == latest_observation_->object_names.end()) return false;
+                    }
+                    return true;
+                })) {
+                return {"OBSERVATION_FAILED", "no complete fresh RGB-D observation; cube occluded or camera/TF unavailable"};
+            }
+            observation = latest_observation_;
+        }
+        if (observation->header.frame_id != "gazebo_world" ||
+            observation->object_names.size() != observation->poses.size()) {
+            return {"OBSERVATION_FAILED", "invalid observation frame or pose list"};
+        }
+        std::map<std::string, Object> measured = objects_;
+        for (auto& entry : measured) {
+            if (entry.first != held_object_) entry.second.location = LOCATION_UNKNOWN;
+        }
+        std::set<std::string> seen;
+        for (size_t i = 0; i < observation->object_names.size(); ++i) {
+            const auto& name = observation->object_names[i];
+            if (!objects_.count(name) || name == held_object_) continue;
+            if (!seen.insert(name).second) return {"OBSERVATION_FAILED", "duplicate object observation"};
+            const auto& pose = observation->poses[i];
+            auto& object = measured.at(name);
+            const auto& q = pose.orientation;
+            if (!std::isfinite(pose.position.x) || !std::isfinite(pose.position.y) ||
+                !std::isfinite(pose.position.z) || !std::isfinite(q.z) || !std::isfinite(q.w) ||
+                std::hypot(q.z, q.w) < 0.9) {
+                return {"OBSERVATION_FAILED", "invalid measured pose"};
+            }
+            object.box.x = pose.position.x - base_[0];
+            object.box.y = pose.position.y - base_[1];
+            object.box.z = pose.position.z - base_[2];
+            object.box.yaw = 2.0 * std::atan2(q.z, q.w);
+            object.location = LOCATION_TABLE;
+            for (const auto& zone : zones_) {
+                if (overlaps_zone(object.box.x, object.box.y, footprint_radius(object.box), zone.second)) {
+                    object.location = zone.first;
+                    break;
+                }
+            }
+        }
+        objects_ = measured;
+        std::vector<moveit_msgs::msg::CollisionObject> boxes;
+        std::vector<moveit_msgs::msg::ObjectColor> colors;
+        std::vector<std::string> missing;
+        for (const auto& entry : objects_) {
+            if (entry.first == held_object_) continue;
+            if (entry.second.location == LOCATION_UNKNOWN) missing.push_back(entry.first);
+            else {
+                boxes.push_back(make_object(entry.first));
+                colors.push_back(make_color(entry.first));
+            }
+        }
+        if (!boxes.empty() && !planning_scene_->applyCollisionObjects(boxes, colors)) {
+            return {"OBSERVATION_FAILED", "could not update MoveIt scene"};
+        }
+        if (!missing.empty()) {
+            // Keep last known collision geometry, but never infer that a hidden cube's zone is free.
+            return {"OBSERVATION_FAILED", "cube not fully visible: " + missing.front() +
+                    "; cannot confirm zone occupancy or table clearance"};
+        }
+        observed_ = true;
+        return {"SUCCESS", ""};
+    }
+
+    Result execute_place_on_table(const std::string& object_name, const std::vector<double>& position) {
+        if (position.size() != 2 || !std::isfinite(position[0]) || !std::isfinite(position[1])) {
+            return {"INVALID_POSITION", "position must be finite [x, y] in gazebo_world"};
+        }
+        if (held_object_.empty() || object_name != held_object_) {
+            return {"NOT_HOLDING_OBJECT", "place_on_table must name the held object"};
+        }
+        const double r = footprint_radius(objects_.at(object_name).box);
+        const double x = position[0] - base_[0], y = position[1] - base_[1];
+        if (position[0] < table_bounds_[0] + r || position[0] > table_bounds_[1] - r ||
+            position[1] < table_bounds_[2] + r || position[1] > table_bounds_[3] - r ||
+            std::hypot(x, y) < robot_keepout_ + r || std::hypot(x, y) > placement_reach_ - r) {
+            return {"INVALID_POSITION", "temporary footprint outside placement bounds, keepout or reach"};
+        }
+        for (const auto& zone : zones_) {
+            if (overlaps_zone(x, y, r + placement_gap_, zone.second)) {
+                return {"INVALID_POSITION", "temporary position overlaps " + zone.first};
+            }
+        }
+        for (const auto& entry : objects_) {
+            if (entry.first == held_object_) continue;
+            if (entry.second.location == LOCATION_UNKNOWN) {
+                return {"INVALID_POSITION", "cannot check clearance of " + entry.first};
+            }
+            const auto& box = entry.second.box;
+            if (std::hypot(x - box.x, y - box.y) < r + footprint_radius(box) + placement_gap_) {
+                return {"INVALID_POSITION", "temporary position too close to " + entry.first};
+            }
+        }
+        return place_at(Zone{x, y, table_surface_z_, 0.0, 0.0}, LOCATION_TABLE, "temporary table position");
+    }
+
     Result execute_home() {
         move_group_->setStartStateToCurrentState();
         if (!move_group_->setNamedTarget("home")) {
@@ -636,8 +850,11 @@ private:
             return {"ZONE_OCCUPIED", "'" + zone_name + "' already holds '" + occupant + "'"};
         }
 
+        return place_at(it->second, zone_name, zone_name);
+    }
+
+    Result place_at(const Zone& zone, const std::string& location, const std::string& label) {
         const std::string held = held_object_;
-        const Zone& zone = it->second;
         Object& object = objects_.at(held);
 
         // Height of the centre of the object once it rests in the zone
@@ -647,10 +864,10 @@ private:
         geometry_msgs::msg::Pose hover_pose = place_pose;
         hover_pose.position.z += approach_distance_;
 
-        Result result = move_arm(hover_pose, "move to " + zone_name);
+        Result result = move_arm(hover_pose, "move to " + label);
         if (!result.ok()) return result;
 
-        result = move_arm_cartesian(place_pose, "move down to " + zone_name);
+        result = move_arm_cartesian(place_pose, "move down to " + label);
         if (!result.ok()) return result;
 
         if (verify_grasp_ && !object_between_fingers()) {
@@ -666,7 +883,7 @@ private:
         object.box.y = zone.y;
         object.box.z = rest_z;
         object.box.yaw = 0.0;
-        object.location = zone_name;
+        object.location = location;
         held_object_.clear();
         if (!detach_object(held)) {
             return {"FAILED", "could not detach '" + held + "' in the planning scene"};

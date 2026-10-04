@@ -1,0 +1,187 @@
+# RGB-D world: object positions below are placeholders, never used for picking.
+# Measured cube centres replace them on observe; zone geometry is calibrated.
+/**:
+  ros__parameters:
+    robot_base_position:
+    - -0.35
+    - 0.0
+    - 0.81
+    use_perception: true
+    table_surface_z: 0.8
+    table_placement_bounds:
+    - -0.25
+    - 0.015
+    - -0.34
+    - 0.34
+    placement_gap: 0.015
+    robot_keepout_radius: 0.12
+    placement_max_reach: 0.56
+    observation_timeout_sec: 5.0
+    object_names:
+    - red_cube
+    - blue_cube
+    - yellow_cube
+    - green_cube
+    - pink_cube
+    zone_names:
+    - zone_a
+    - zone_b
+    - zone_c
+    obstacle_names:
+    - table
+    - tray_a
+    - tray_b
+    - tray_c
+    objects:
+      red_cube:
+        position:
+        - -0.1
+        - 0.0
+        - 0.825
+        yaw: 0.5
+        size:
+        - 0.05
+        - 0.05
+        - 0.05
+        color:
+        - 1.0
+        - 0.0
+        - 0.0
+        description: khối lập phương màu đỏ (red cube)
+      blue_cube:
+        position:
+        - -0.1
+        - 0.15
+        - 0.825
+        yaw: 1.0
+        size:
+        - 0.05
+        - 0.05
+        - 0.05
+        color:
+        - 0.0
+        - 0.0
+        - 1.0
+        description: khối lập phương màu xanh dương (blue cube)
+      yellow_cube:
+        position:
+        - -0.1
+        - -0.15
+        - 0.825
+        yaw: -0.2
+        size:
+        - 0.05
+        - 0.05
+        - 0.05
+        color:
+        - 1.0
+        - 1.0
+        - 0.0
+        description: khối lập phương màu vàng (yellow cube)
+      green_cube:
+        position:
+        - -0.1
+        - 0.0
+        - 0.825
+        yaw: 0.0
+        size:
+        - 0.05
+        - 0.05
+        - 0.05
+        color:
+        - 0.0
+        - 1.0
+        - 0.0
+        description: khối lập phương màu xanh lá (green cube)
+      pink_cube:
+        position:
+        - -0.1
+        - 0.0
+        - 0.825
+        yaw: 0.0
+        size:
+        - 0.05
+        - 0.05
+        - 0.05
+        color:
+        - 1.0
+        - 0.2
+        - 0.6
+        description: khối lập phương màu hồng (pink cube)
+    zones:
+      zone_a:
+        position:
+        - 0.1
+        - 0.15
+        - 0.81
+        description: vùng A, ô A, khay A (zone A)
+        size:
+        - 0.15
+        - 0.15
+      zone_b:
+        position:
+        - 0.1
+        - 0.0
+        - 0.81
+        description: vùng B, ô B, khay B (zone B)
+        size:
+        - 0.15
+        - 0.15
+      zone_c:
+        position:
+        - 0.1
+        - -0.15
+        - 0.81
+        description: vùng C, ô C, khay C (zone C)
+        size:
+        - 0.15
+        - 0.15
+    obstacles:
+      table:
+        position:
+        - 0.0
+        - 0.0
+        - 0.4
+        size:
+        - 1.0
+        - 0.8
+        - 0.8
+      tray_a:
+        position:
+        - 0.1
+        - 0.15
+        - 0.805
+        size:
+        - 0.15
+        - 0.15
+        - 0.01
+      tray_b:
+        position:
+        - 0.1
+        - 0.0
+        - 0.805
+        size:
+        - 0.15
+        - 0.15
+        - 0.01
+      tray_c:
+        position:
+        - 0.1
+        - -0.15
+        - 0.805
+        size:
+        - 0.15
+        - 0.15
+        - 0.01
+    tcp_offset: 0.2
+    approach_distance: 0.1
+    place_clearance: 0.003
+    collision_margin: 0.002
+    gripper_open_position: 0.0
+    gripper_grasp_position: 0.023
+    gripper_closed_position: 0.04
+    verify_grasp: true
+    arm_velocity_scaling: 0.3
+    arm_acceleration_scaling: 0.3
+    cartesian_speed_scaling: 0.2
+    cartesian_jump_threshold: 5.0

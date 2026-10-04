@@ -1,0 +1,354 @@
+<?xml version="1.0" ?>
+<sdf version="1.8">
+  <world name="ur3e_perception_world">
+
+    <!-- Các plugin cốt lõi -->
+    <plugin filename="ignition-gazebo-physics-system" name="ignition::gazebo::systems::Physics"/>
+    <plugin filename="ignition-gazebo-user-commands-system" name="ignition::gazebo::systems::UserCommands"/>
+    <plugin filename="ignition-gazebo-scene-broadcaster-system" name="ignition::gazebo::systems::SceneBroadcaster"/>
+
+    <!-- Camera rendering for Gazebo Fortress. -->
+    <plugin filename="ignition-gazebo-sensors-system" name="ignition::gazebo::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+
+    <gravity>0 0 -9.8</gravity>
+
+    <!-- Ánh sáng -->
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.9 0.9 0.9 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <direction>-0.5 0.5 -0.9</direction>
+    </light>
+
+    <!-- Mặt đất -->
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal><size>10 10</size></plane></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>10 10</size></plane></geometry>
+          <material>
+            <ambient>0.8 0.8 0.8 1</ambient>
+            <diffuse>0.8 0.8 0.8 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ======================= BÀN (TABLE) ======================= -->
+    <model name="table">
+      <static>true</static>
+      <pose>0 0 0.4 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.0 0.8 0.8</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.0 0.8 0.8</size></box></geometry>
+          <material>
+            <ambient>0.6 0.5 0.4 1</ambient>
+            <diffuse>0.6 0.5 0.4 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ================= VỊ TRÍ ĐẶT ROBOT ================= -->
+    <!-- Khi spawn UR3e hãy dùng tọa độ này: X = -0.35, Y = 0.0, Z = 0.8 -->
+
+    <!-- ======================= CUBES ======================= -->
+    <!-- Bản sao của ur_table.sdf với 5 cube; pose từ perception sẽ được
+         nối vào skill trong bước sau. UR3e + RG2 được spawn bởi launch. -->
+    <model name="red_cube">
+      <static>false</static>
+      <pose>-0.10 0.0 0.825 0 0 0.5</pose>
+      <link name="link">
+        <inertial><mass>0.05</mass><inertia><ixx>2.08e-5</ixx><iyy>2.08e-5</iyy><izz>2.08e-5</izz></inertia></inertial>
+        <collision name="collision">
+          <geometry><box><size>0.05 0.05 0.05</size></box></geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>1000.0</mu>
+                <mu2>1000.0</mu2>
+              </ode>
+            </friction>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.05 0.05 0.05</size></box></geometry>
+          <material><ambient>1 0 0 1</ambient><diffuse>1 0 0 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="yellow_cube">
+      <static>false</static>
+      <pose>-0.10 -0.15 0.825 0 0 -0.2</pose>
+      <link name="link">
+        <inertial><mass>0.05</mass><inertia><ixx>2.08e-5</ixx><iyy>2.08e-5</iyy><izz>2.08e-5</izz></inertia></inertial>
+        <collision name="collision">
+          <geometry><box><size>0.05 0.05 0.05</size></box></geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>1000.0</mu>
+                <mu2>1000.0</mu2>
+              </ode>
+            </friction>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.05 0.05 0.05</size></box></geometry>
+          <material><ambient>1 1 0 1</ambient><diffuse>1 1 0 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="blue_cube">
+      <static>false</static>
+      <pose>-0.10 0.15 0.825 0 0 1.0</pose>
+      <link name="link">
+        <inertial><mass>0.05</mass><inertia><ixx>2.08e-5</ixx><iyy>2.08e-5</iyy><izz>2.08e-5</izz></inertia></inertial>
+        <collision name="collision">
+          <geometry><box><size>0.05 0.05 0.05</size></box></geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>1000.0</mu>
+                <mu2>1000.0</mu2>
+              </ode>
+            </friction>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.05 0.05 0.05</size></box></geometry>
+          <material><ambient>0 0 1 1</ambient><diffuse>0 0 1 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="green_cube">
+      <static>false</static>
+      <pose>-0.10 -0.30 0.825 0 0 0.3</pose>
+      <link name="link">
+        <inertial><mass>0.05</mass><inertia><ixx>2.08e-5</ixx><iyy>2.08e-5</iyy><izz>2.08e-5</izz></inertia></inertial>
+        <collision name="collision">
+          <geometry><box><size>0.05 0.05 0.05</size></box></geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>1000.0</mu>
+                <mu2>1000.0</mu2>
+              </ode>
+            </friction>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.05 0.05 0.05</size></box></geometry>
+          <material><ambient>0 1 0 1</ambient><diffuse>0 1 0 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="pink_cube">
+      <static>false</static>
+      <pose>-0.10 0.30 0.825 0 0 -0.4</pose>
+      <link name="link">
+        <inertial><mass>0.05</mass><inertia><ixx>2.08e-5</ixx><iyy>2.08e-5</iyy><izz>2.08e-5</izz></inertia></inertial>
+        <collision name="collision">
+          <geometry><box><size>0.05 0.05 0.05</size></box></geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>1000.0</mu>
+                <mu2>1000.0</mu2>
+              </ode>
+            </friction>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.05 0.05 0.05</size></box></geometry>
+          <material><ambient>1 0.2 0.6 1</ambient><diffuse>1 0.2 0.6 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ======================= KHAY ĐÍCH (MÀU XÁM) ======================= -->
+    <!-- Tâm khay ở X = 0.10: dịch +X 5 cm ra xa robot so với world cũ. -->
+    <model name="tray_A">
+      <static>true</static>
+      <pose>0.10 0.15 0.805 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>0.15 0.15 0.01</size></box></geometry></collision>
+        <visual name="visual">
+          <geometry><box><size>0.15 0.15 0.01</size></box></geometry>
+          <material><ambient>0.5 0.5 0.5 1</ambient><diffuse>0.5 0.5 0.5 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="tray_B">
+      <static>true</static>
+      <pose>0.10 0.0 0.805 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>0.15 0.15 0.01</size></box></geometry></collision>
+        <visual name="visual">
+          <geometry><box><size>0.15 0.15 0.01</size></box></geometry>
+          <material><ambient>0.5 0.5 0.5 1</ambient><diffuse>0.5 0.5 0.5 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="tray_C">
+      <static>true</static>
+      <pose>0.10 -0.15 0.805 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>0.15 0.15 0.01</size></box></geometry></collision>
+        <visual name="visual">
+          <geometry><box><size>0.15 0.15 0.01</size></box></geometry>
+          <material><ambient>0.5 0.5 0.5 1</ambient><diffuse>0.5 0.5 0.5 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ======================= CHỮ KHẮC TRÊN BÀN ======================= -->
+    <!-- Chữ A/B/C cũng dịch +X 5 cm cùng các khay. -->
+
+    <model name="letter_A">
+      <static>true</static>
+      <pose>0.23 0.2 0.801 0 0 0</pose>
+      <link name="link">
+        <visual name="left_leg">
+          <pose>0 0.015 0 0 0 0</pose>
+          <geometry><box><size>0.06 0.01 0.001</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse></material>
+        </visual>
+        <visual name="right_leg">
+          <pose>0 -0.015 0 0 0 0</pose>
+          <geometry><box><size>0.06 0.01 0.001</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse></material>
+        </visual>
+        <visual name="top_bar">
+          <pose>0.025 0 0 0 0 0</pose>
+          <geometry><box><size>0.01 0.04 0.001</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse></material>
+        </visual>
+        <visual name="mid_bar">
+          <pose>0 0 0 0 0 0</pose>
+          <geometry><box><size>0.01 0.04 0.001</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="letter_B">
+      <static>true</static>
+      <pose>0.23 0.0 0.801 0 0 0</pose>
+      <link name="link">
+        <visual name="spine">
+          <pose>0 0.015 0 0 0 0</pose>
+          <geometry><box><size>0.06 0.01 0.001</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse></material>
+        </visual>
+        <visual name="top_bar">
+          <pose>0.025 -0.005 0 0 0 0</pose>
+          <geometry><box><size>0.01 0.03 0.001</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse></material>
+        </visual>
+        <visual name="mid_bar">
+          <pose>0 -0.005 0 0 0 0</pose>
+          <geometry><box><size>0.01 0.03 0.001</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse></material>
+        </visual>
+        <visual name="bot_bar">
+          <pose>-0.025 -0.005 0 0 0 0</pose>
+          <geometry><box><size>0.01 0.03 0.001</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse></material>
+        </visual>
+        <visual name="right_top">
+          <pose>0.0125 -0.015 0 0 0 0</pose>
+          <geometry><box><size>0.015 0.01 0.001</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse></material>
+        </visual>
+        <visual name="right_bot">
+          <pose>-0.0125 -0.015 0 0 0 0</pose>
+          <geometry><box><size>0.015 0.01 0.001</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="letter_C">
+      <static>true</static>
+      <pose>0.23 -0.2 0.801 0 0 0</pose>
+      <link name="link">
+        <visual name="spine">
+          <pose>0 0.015 0 0 0 0</pose>
+          <geometry><box><size>0.06 0.01 0.001</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse></material>
+        </visual>
+        <visual name="top_bar">
+          <pose>0.025 -0.005 0 0 0 0</pose>
+          <geometry><box><size>0.01 0.03 0.001</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse></material>
+        </visual>
+        <visual name="bot_bar">
+          <pose>-0.025 -0.005 0 0 0 0</pose>
+          <geometry><box><size>0.01 0.03 0.001</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ======================= RGB-D CAMERA ======================= -->
+    <!-- Camera cao hơn mặt bàn 0.8 m, nhìn xuống theo trục +X cục bộ.
+         HFOV 80 độ bao phủ 5 cube và 3 zone. Pose và TF trong
+         ur3e_rg2_table_depth.launch.py phải khớp khi di chuyển camera. -->
+    <model name="depth_camera">
+      <static>true</static>
+      <pose>0 0 1.6 0 1.5707963267948966 0</pose>
+      <link name="camera_link">
+        <!-- Thân camera nằm phía sau mặt cảm biến để không chắn ảnh. -->
+        <collision name="camera_body_collision">
+          <pose>-0.03 0 0 0 0 0</pose>
+          <geometry><box><size>0.06 0.12 0.04</size></box></geometry>
+        </collision>
+        <visual name="camera_body">
+          <pose>-0.03 0 0 0 0 0</pose>
+          <geometry><box><size>0.06 0.12 0.04</size></box></geometry>
+          <material><ambient>0.12 0.12 0.12 1</ambient><diffuse>0.12 0.12 0.12 1</diffuse></material>
+        </visual>
+        <visual name="camera_lens">
+          <pose>0 0 0 0 1.5707963267948966 0</pose>
+          <geometry><cylinder><radius>0.012</radius><length>0.002</length></cylinder></geometry>
+          <material><ambient>0.05 0.2 0.3 1</ambient><diffuse>0.05 0.2 0.3 1</diffuse></material>
+        </visual>
+        <sensor name="rgbd_sensor" type="rgbd_camera">
+          <always_on>true</always_on>
+          <update_rate>15</update_rate>
+          <topic>/depth_camera</topic>
+          <!-- Fortress point cloud XYZ uses +X forward; launch corrects its
+               header to depth_camera_link. Images use the optical frame. -->
+          <ignition_frame_id>depth_camera_link</ignition_frame_id>
+          <camera>
+            <optical_frame_id>depth_camera_optical_frame</optical_frame_id>
+            <horizontal_fov>1.3962634015954636</horizontal_fov>
+            <image>
+              <width>640</width>
+              <height>480</height>
+              <format>R8G8B8</format>
+            </image>
+            <clip><near>0.05</near><far>3.0</far></clip>
+          </camera>
+        </sensor>
+      </link>
+    </model>
+
+  </world>
+</sdf>

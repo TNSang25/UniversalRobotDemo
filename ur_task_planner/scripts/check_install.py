@@ -79,16 +79,19 @@ def check_installation():
         else:
             Parameter(name, value=value)
 
-    for config in ('scene.yaml', 'kinematics.yaml'):
+    for config in ('scene.yaml', 'scene_depth.yaml', 'kinematics.yaml'):
         parameters = yaml.safe_load((shares['ur_task_planner'] / 'config' / config).read_text())
         check_parameters(config, parameters['/**']['ros__parameters'])
 
     from ur_task_planner.srv import ExecuteSkill
     check_for_type_support(ExecuteSkill)
+    from ur_task_planner.msg import ObservedScene
+    check_for_type_support(ObservedScene)
     executables = Path(get_package_prefix('ur_task_planner')) / 'lib/ur_task_planner'
     require((executables / 'skill_executor_node').is_file(), 'C++ skill executor is missing')
     require((executables / 'llm_planner_node.py').is_file(), 'LLM planner is missing')
-    require((executables / 'plan_validator.py').is_file(), 'Installed plan_validator is missing')
+    for asset in ('plan_validator.py', 'scene_geometry.py', 'cube_perception.py', 'scene_observer_node.py'):
+        require((executables / asset).is_file(), f'Installed {asset} is missing')
     print('Installation OK: launch imports, URDF/meshes, SRDF, controllers, '
           'ROS parameters, service types.')
 

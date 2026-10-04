@@ -3,10 +3,15 @@
 This module has no ROS dependency so it can be unit tested on its own.
 """
 import copy
+import math
+
+from scene_geometry import overlaps_zone, radius
 
 # Parameters each skill takes. A step must contain exactly these.
 SKILL_PARAMS = {
     'home': (),
+    'observe': (),
+    'place_on_table': ('object', 'position'),
     'pick': ('object',),
     'place': ('object', 'zone'),
     'move_above': ('object',),
@@ -27,10 +32,13 @@ class PlanValidationError(Exception):
 class SceneState:
     """What the robot is holding and where every object currently is."""
 
-    def __init__(self, holding=None, locations=None):
+    def __init__(self, holding=None, locations=None, positions=None, observed=False, revision=-1):
         self.holding = holding or None
         # object id -> 'table' | 'gripper' | 'unknown' | zone id
         self.locations = dict(locations or {})
+        self.positions = copy.deepcopy(positions or {})
+        self.observed = observed
+        self.revision = revision
 
     @classmethod
     def from_dict(cls, data):
@@ -40,7 +48,35 @@ class SceneState:
         locations = data.get('objects', {})
         if not isinstance(locations, dict):
             raise ValueError('"objects" must be a JSON object')
-        return cls(holding=data.get('holding'), locations=locations)
+        if any(not isinstance(k, str) or not isinstance(v, str) for k, v in locations.items()):
+            raise ValueError('object locations must be strings')
+        holding = data.get('holding')
+        if holding is not None and not isinstance(holding, str):
+            raise ValueError('holding must be a string or null')
+        positions = data.get('positions', {})
+        if not isinstance(positions, dict) or any(
+                not isinstance(p, list) or len(p) != 3 or any(
+                    isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v)
+                    for v in p) for p in positions.values()):
+            raise ValueError('positions must map object ids to finite XYZ lists')
+        revision = data.get('revision', -1)
+        if isinstance(revision, bool) or not isinstance(revision, int) or revision < -1:
+            raise ValueError('revision must be a nonnegative integer')
+        return cls(holding=holding, locations=locations, positions=positions,
+                   observed=data.get('observed') is True, revision=revision)
+
+    def occupants(self, zone, workspace=None):
+        result = []
+        for obj, location in self.locations.items():
+            if location in (LOCATION_UNKNOWN, LOCATION_GRIPPER):
+                continue
+            if workspace is not None and obj in self.positions and obj in workspace.sizes:
+                x, y = self.positions[obj][:2]
+                if overlaps_zone(x, y, radius(workspace.sizes[obj]), workspace.zones[zone]):
+                    result.append(obj)
+            elif location == zone:
+                result.append(obj)
+        return result
 
     def occupant(self, zone):
         for obj, location in self.locations.items():
@@ -51,7 +87,7 @@ class SceneState:
 
 class PlanValidator:
 
-    def __init__(self, allowed_objects, allowed_zones, allowed_skills=None, max_steps=20):
+    def __init__(self, allowed_objects, allowed_zones, allowed_skills=None, max_steps=20, workspace=None):
         self.allowed_skills = list(allowed_skills) if allowed_skills else list(SKILL_PARAMS)
         unknown = [s for s in self.allowed_skills if s not in SKILL_PARAMS]
         if unknown:
@@ -59,11 +95,12 @@ class PlanValidator:
         self.allowed_objects = list(allowed_objects)
         self.allowed_zones = list(allowed_zones)
         self.max_steps = max_steps
+        self.workspace = workspace
 
     def validate(self, plan_data, state=None):
         """Return the list of steps to execute, or raise PlanValidationError.
 
-        Every returned step is a dict with the keys 'skill', 'object' and 'zone'
+        Every returned step has 'skill', 'object' and 'zone'; place_on_table also has 'position'
         (empty string when the skill does not take that parameter).
         """
         if not isinstance(plan_data, dict):
@@ -96,7 +133,7 @@ class PlanValidator:
         for key in step:
             if key == 'skill':
                 continue
-            if key not in ('object', 'zone'):
+            if key not in ('object', 'zone', 'position'):
                 raise PlanValidationError(f'{where}: unknown field {key!r}')
             if key not in expected:
                 raise PlanValidationError(f'{where}: skill {skill!r} does not take {key!r}')
@@ -104,6 +141,13 @@ class PlanValidator:
         checked = {'skill': skill, 'object': '', 'zone': ''}
         for key in expected:
             value = step.get(key)
+            if key == 'position':
+                if not isinstance(value, list) or len(value) != 2 or any(
+                        isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v)
+                        for v in value):
+                    raise PlanValidationError(f'{where}: position must be two finite numbers [x, y]')
+                checked[key] = list(value)
+                continue
             if not isinstance(value, str) or not value:
                 raise PlanValidationError(f'{where}: skill {skill!r} requires {key!r}')
             allowed = self.allowed_objects if key == 'object' else self.allowed_zones
@@ -130,17 +174,33 @@ class PlanValidator:
                         f'{where}: cannot pick {obj!r} while holding {state.holding!r}')
                 state.holding = obj
                 state.locations[obj] = LOCATION_GRIPPER
-            elif skill == 'place':
+            elif skill in ('place', 'place_on_table'):
                 if state.holding != obj:
                     held = repr(state.holding) if state.holding else 'nothing'
                     raise PlanValidationError(
                         f'{where}: cannot place {obj!r}, the gripper holds {held}')
-                occupant = state.occupant(zone)
+                if skill == 'place_on_table':
+                    if self.workspace is None:
+                        raise PlanValidationError(f'{where}: table workspace is not configured')
+                    try:
+                        self.workspace.check(obj, step['position'], state.positions, state.locations)
+                    except ValueError as error:
+                        raise PlanValidationError(f'{where}: {error}') from error
+                    state.holding = None
+                    state.locations[obj] = LOCATION_TABLE
+                    state.positions[obj] = [*step['position'],
+                                            self.workspace.height + self.workspace.sizes[obj][2] / 2]
+                    continue
+                occupants = state.occupants(zone, self.workspace)
+                occupant = occupants[0] if occupants else None
                 if occupant:
                     raise PlanValidationError(
                         f'{where}: {zone!r} is already occupied by {occupant!r}')
                 state.holding = None
                 state.locations[obj] = zone
+                if self.workspace is not None:
+                    state.positions[obj] = list(self.workspace.zones[zone]['position'])
+                    state.positions[obj][2] += self.workspace.sizes[obj][2] / 2
             elif skill == 'move_above':
                 if state.holding == obj:
                     raise PlanValidationError(

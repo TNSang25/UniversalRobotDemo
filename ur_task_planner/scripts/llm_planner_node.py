@@ -12,6 +12,8 @@ from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import String
 from ur_task_planner.srv import ExecuteSkill
 
+from scene_geometry import TableWorkspace
+
 from plan_validator import (LOCATION_GRIPPER, LOCATION_TABLE, LOCATION_UNKNOWN,
                             SKILL_PARAMS, PlanValidationError, PlanValidator, SceneState)
 
@@ -27,6 +29,8 @@ MODEL_ERRORS = (404, 429, 500, 503)
 
 SKILL_DESCRIPTIONS = {
     'home': 'move the arm back to its home pose',
+    'observe': 'refresh cube poses and zone occupancy from the camera',
+    'place_on_table': 'release the held object at an LLM-chosen temporary table position [x, y] in gazebo_world metres',
     'pick': 'grasp an object and lift it',
     'place': 'put the object held by the gripper into a zone and release it',
     'move_above': 'move the gripper above an object without touching it',
@@ -62,12 +66,26 @@ class LLMPlannerNode(Node):
         self.zones = {
             name: self.param(f'zones.{name}.description', name) for name in zone_names}
 
-        self.validator = PlanValidator(object_names, zone_names)
+        self.use_perception = bool(self.param('use_perception', False))
+        self.workspace = TableWorkspace(
+            bounds=self.param('table_placement_bounds', [-0.25, 0.015, -0.34, 0.34]),
+            base=self.get_parameter('robot_base_position').value,
+            zones={name: {
+                'position': list(self.get_parameter(f'zones.{name}.position').value),
+                'size': self.param(f'zones.{name}.size', [0.15, 0.15]),
+            } for name in zone_names},
+            sizes={name: list(self.get_parameter(f'objects.{name}.size').value) for name in object_names},
+            gap=float(self.param('placement_gap', 0.015)),
+            keepout=float(self.param('robot_keepout_radius', 0.12)),
+            reach=float(self.param('placement_max_reach', 0.56)),
+            height=float(self.param('table_surface_z', 0.8)),
+        )
+        self.validator = PlanValidator(object_names, zone_names, workspace=self.workspace)
         self.system_prompt = self.build_system_prompt()
 
-        # Until the skill executor reports otherwise, everything is on the table
+        # Wait for the authoritative executor snapshot before using any object pose
         self.scene_state = SceneState(
-            locations={name: LOCATION_TABLE for name in object_names})
+            locations={name: LOCATION_UNKNOWN for name in object_names})
         self.state_lock = threading.Lock()
         self.busy = threading.Lock()
 
@@ -131,32 +149,57 @@ class LLMPlannerNode(Node):
             'plan that moved objects with "home".',
             '4. The gripper holds one object at a time and a zone holds one object '
             'at a time. Take the current state into account.',
-            '5. Never invent skills, objects or zones. If the command cannot be done '
+            '5. If the target zone contains another cube, FIRST pick that occupant and '
+            'place_on_table outside ALL zones. Choose its temporary [x, y] yourself '
+            'using current measured positions and the workspace constraints below. '
+            'Only AFTER clearing every occupant, pick the requested cube and place it in the target zone. '
+            'Do not require an empty spare zone; all zones may be occupied. '
+            'If the requested cube is already in the target zone, just home.',
+            '6. Never invent skills, objects or zones. If the command cannot be done '
             'with the ids above, or is not a command for the robot, answer '
             '{"plan": [], "reason": "<short explanation in the language of the user>"}.',
+            '',
+            'Table placement constraints (gazebo_world metres):',
+            f'- full cube footprint must fit inside [xmin, xmax, ymin, ymax] = {self.workspace.bounds}',
+            f'- table surface Z = {self.workspace.height}; supply only [x, y]',
+            f'- robot base XY = {list(self.workspace.base[:2])}; keepout radius = {self.workspace.keepout}',
+            f'- maximum radial reach = {self.workspace.reach}; include cube footprint radius in both limits',
+            f'- minimum gap from other cubes and every zone = {self.workspace.gap}',
+            '- use circumscribed footprint radius sqrt(size_x^2 + size_y^2)/2 for clearance',
+            f'- cube sizes: {json.dumps(self.workspace.sizes)}',
+            f'- zone geometry: {json.dumps(self.workspace.zones)}',
+            '- account for positions changed by earlier plan steps; do not choose an unverified location',
             '',
             'Example for "Đưa khối màu đỏ vào vùng B":',
             '{"plan": [{"skill": "pick", "object": "red_cube"}, '
             '{"skill": "place", "object": "red_cube", "zone": "zone_b"}, '
             '{"skill": "home"}]}',
+            'Occupied-zone example, if red_cube occupies zone_b and blue_cube is requested:',
+            '{"plan": [{"skill": "pick", "object": "red_cube"}, '
+            '{"skill": "place_on_table", "object": "red_cube", "position": ["CHOOSE_X", "CHOOSE_Y"]}, '
+            '{"skill": "pick", "object": "blue_cube"}, '
+            '{"skill": "place", "object": "blue_cube", "zone": "zone_b"}, '
+            '{"skill": "home"}]}',
+            'CHOOSE_X and CHOOSE_Y are placeholders: replace with feasible numeric coordinates.',
         ])
 
     def describe_state(self, state):
         lines = [f'- gripper: holding {state.holding}' if state.holding
                  else '- gripper: empty']
         for name in self.objects:
-            location = state.locations.get(name, LOCATION_TABLE)
+            location = state.locations.get(name, LOCATION_UNKNOWN)
             if location == LOCATION_GRIPPER:
                 lines.append(f'- {name}: in the gripper')
             elif location == LOCATION_TABLE:
                 lines.append(f'- {name}: on the table, outside of the zones')
             elif location == LOCATION_UNKNOWN:
-                lines.append(f'- {name}: dropped, position unknown, cannot be picked')
+                lines.append(f'- {name}: position unknown or not visible, cannot be picked')
             else:
                 lines.append(f'- {name}: in {location}')
+        lines.append(f'- measured cube centres XYZ: {json.dumps(state.positions)}')
         for name in self.zones:
-            occupant = state.occupant(name)
-            lines.append(f'- {name}: holds {occupant}' if occupant else f'- {name}: free')
+            occupants = state.occupants(name, self.workspace)
+            lines.append(f'- {name}: holds {", ".join(occupants)}' if occupants else f'- {name}: free')
         return '\n'.join(lines)
 
     def scene_state_callback(self, msg):
@@ -166,6 +209,8 @@ class LLMPlannerNode(Node):
             self.get_logger().warn(f"Ignoring malformed /scene_state: {e}")
             return
         with self.state_lock:
+            if state.revision >= 0 and state.revision < self.scene_state.revision:
+                return  # A delayed topic message must not overwrite a newer service snapshot.
             self.scene_state = state
 
     def command_callback(self, msg):
@@ -192,37 +237,45 @@ class LLMPlannerNode(Node):
             self.busy.release()
 
     def process_command(self, command):
+        status, message = self.call_skill('observe')
+        if status != 'SUCCESS':
+            self.publish_status(command, status, message)
+            return
         with self.state_lock:
-            state = SceneState(self.scene_state.holding, self.scene_state.locations)
-
-        try:
-            plan_json = self.query_llm(command, state)
-        except RuntimeError as e:
-            self.get_logger().error(f"LLM API Error: {e}")
-            self.publish_status(command, 'LLM_ERROR', str(e))
-            return
-        self.get_logger().info(f"Generated Plan:\n{plan_json}")
-
-        try:
-            plan_data = json.loads(extract_json(plan_json))
-        except json.JSONDecodeError:
-            self.get_logger().error("LLM did not return valid JSON.")
-            self.publish_status(command, 'REJECTED', 'LLM did not return valid JSON')
+            state = SceneState(self.scene_state.holding, self.scene_state.locations,
+                               self.scene_state.positions, self.scene_state.observed, self.scene_state.revision)
+        if self.use_perception and not state.observed:
+            self.publish_status(command, 'OBSERVATION_FAILED', 'camera scene has not been confirmed')
             return
 
-        # Validation
-        try:
-            plan = self.validator.validate(plan_data, state)
-        except PlanValidationError as e:
-            self.get_logger().error(f"Plan rejected: {e}")
-            self.publish_status(command, 'REJECTED', str(e))
-            return
+        feedback = ''
+        for attempt in range(3):
+            try:
+                plan_json = self.query_llm(command, state, feedback)
+            except RuntimeError as error:
+                self.get_logger().error(f"LLM API Error: {error}")
+                self.publish_status(command, 'LLM_ERROR', str(error))
+                return
+            self.get_logger().info(f"Generated Plan:\n{plan_json}")
+            try:
+                plan_data = json.loads(extract_json(plan_json))
+                plan = self.validator.validate(plan_data, state)
+                break
+            except (json.JSONDecodeError, PlanValidationError) as error:
+                feedback = (f'Previous plan was rejected: {error}. No step was executed. '
+                            f'Return a corrected complete plan. Previous answer: {plan_json}')
+                # An explicit refusal has no plan to repair.
+                if attempt == 2 or (isinstance(error, PlanValidationError) and
+                                    isinstance(plan_data, dict) and plan_data.get('plan') == []):
+                    self.publish_status(command, 'REJECTED', str(error))
+                    return
+                self.get_logger().warn(f"Plan rejected: {error}. Asking LLM to correct it.")
 
         # Execution
         self.get_logger().info(f"Plan validated ({len(plan)} steps). Executing...")
         results = []
         for index, step in enumerate(plan, start=1):
-            status, message = self.call_skill(step['skill'], step['object'], step['zone'])
+            status, message = self.call_skill(step['skill'], step['object'], step['zone'], step.get('position', []))
             results.append({**step, 'status': status, 'message': message})
             self.get_logger().info(f"Step {index}/{len(plan)} status: {status} {message}")
             if status != 'SUCCESS':
@@ -231,10 +284,32 @@ class LLMPlannerNode(Node):
                 self.publish_status(command, status, message, results)
                 return
 
+        if self.use_perception:
+            status, message = self.call_skill('observe')
+            if status != 'SUCCESS':
+                self.publish_status(command, status, message, results)
+                return
+            # Check final destinations against the image, including displaced cubes.
+            destinations = {}
+            for step in plan:
+                if step['skill'] in ('place', 'place_on_table'):
+                    destinations[step['object']] = step
+            with self.state_lock:
+                final = self.scene_state
+                for obj, step in destinations.items():
+                    expected = step['zone'] if step['skill'] == 'place' else LOCATION_TABLE
+                    actual = final.locations.get(obj, LOCATION_UNKNOWN)
+                    if actual != expected or (step['skill'] == 'place_on_table' and
+                            any(abs(a-b) > 0.02 for a, b in zip(
+                                final.positions.get(obj, [float('inf'), float('inf')]), step['position']))):
+                        self.publish_status(command, 'VERIFICATION_FAILED',
+                                            f'{obj}: observed destination does not match plan', results)
+                        return
+
         self.get_logger().info("Task completed.")
         self.publish_status(command, 'SUCCESS', '', results)
 
-    def query_llm(self, command, state):
+    def query_llm(self, command, state, feedback=''):
         api_key = os.environ.get('GEMINI_API_KEY')
         if not api_key:
             raise RuntimeError('GEMINI_API_KEY environment variable not set')
@@ -242,7 +317,7 @@ class LLMPlannerNode(Node):
         body = {
             'systemInstruction': {'parts': [{'text': self.system_prompt}]},
             'contents': [{'role': 'user', 'parts': [{
-                'text': f'Current state:\n{self.describe_state(state)}\n\nCommand: {command}'
+                'text': f'Current state:\n{self.describe_state(state)}\n\nCommand: {command}\n\n{feedback}'
             }]}],
             'generationConfig': {'responseMimeType': 'application/json'},
         }
@@ -291,7 +366,7 @@ class LLMPlannerNode(Node):
             except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as e:
                 raise RuntimeError(f'{model}: {e}') from e
 
-    def call_skill(self, skill, obj="", zone=""):
+    def call_skill(self, skill, obj="", zone="", position=None):
         if not self.skill_client.wait_for_service(timeout_sec=5.0):
             return 'FAILED', 'execute_skill service is not available'
 
@@ -299,6 +374,7 @@ class LLMPlannerNode(Node):
         req.skill = skill
         req.object_name = obj
         req.zone = zone
+        req.position = [float(v) for v in (position or [])]
 
         self.get_logger().info(f"Executing: {skill} {obj} {zone}")
 
@@ -316,6 +392,10 @@ class LLMPlannerNode(Node):
             return 'FAILED', f'service call failed: {e}'
         if result is None:
             return 'FAILED', 'service call failed'
+        if result.scene_state:
+            msg = String()
+            msg.data = result.scene_state
+            self.scene_state_callback(msg)
         return result.status, result.message
 
     def publish_status(self, command, status, detail='', steps=None):

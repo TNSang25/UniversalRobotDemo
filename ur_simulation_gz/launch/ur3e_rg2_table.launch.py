@@ -14,9 +14,7 @@ def generate_launch_description():
         ),
         launch_arguments={
             'ur_type': 'ur3e',
-            'world_file': PathJoinSubstitution([
-                FindPackageShare('ur_simulation_gz'), 'world', 'ur_table.sdf'
-            ]),
+            'world_file': LaunchConfiguration('world_file'),
             'spawn_x': '-0.35',
             'spawn_y': '0.0',
             'spawn_z': '0.81',
@@ -31,6 +29,9 @@ def generate_launch_description():
         }.items(),
     )
     return LaunchDescription([
+        DeclareLaunchArgument('world_file', default_value=PathJoinSubstitution([
+            FindPackageShare('ur_simulation_gz'), 'world', 'ur_table.sdf'
+        ])),
         DeclareLaunchArgument('launch_rviz', default_value='true'),
         DeclareLaunchArgument('gazebo_gui', default_value='true'),
         DeclareLaunchArgument('controller_spawner_timeout', default_value='120'),

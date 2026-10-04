@@ -92,7 +92,7 @@ def launch_setup(context, *args, **kwargs):
 
     # Scene shared by the skill executor and the LLM planner
     scene_params = PathJoinSubstitution(
-        [FindPackageShare("ur_task_planner"), "config", "scene.yaml"]
+        [FindPackageShare("ur_task_planner"), "config", LaunchConfiguration("scene_file")]
     )
 
     # Joint limits
@@ -233,7 +233,14 @@ def launch_setup(context, *args, **kwargs):
         parameters=llm_planner_params,
     )
 
-    return [move_group_node, rviz_node, skill_executor_node, llm_planner_node]
+    observer_node = Node(
+        package="ur_task_planner",
+        executable="scene_observer_node.py",
+        condition=IfCondition(LaunchConfiguration("launch_observer")),
+        output="screen",
+        parameters=[scene_params, {"use_sim_time": True}],
+    )
+    return [move_group_node, rviz_node, skill_executor_node, llm_planner_node, observer_node]
 
 
 def generate_launch_description():
@@ -241,6 +248,8 @@ def generate_launch_description():
         DeclareLaunchArgument("ur_type", default_value="ur3e", choices=["ur3e"]),
         DeclareLaunchArgument("launch_rviz", default_value="true"),
         DeclareLaunchArgument("launch_llm", default_value="true"),
+        DeclareLaunchArgument("scene_file", default_value="scene.yaml"),
+        DeclareLaunchArgument("launch_observer", default_value="false"),
         DeclareLaunchArgument("startup_timeout_sec", default_value="120.0"),
         DeclareLaunchArgument(
             "llm_model",
