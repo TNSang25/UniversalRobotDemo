@@ -9,6 +9,7 @@
 #include <std_msgs/msg/string.hpp>
 #include <ur_task_planner/srv/execute_skill.hpp>
 #include <ur_task_planner/msg/observed_scene.hpp>
+#include <ur_task_planner/observation_recovery.hpp>
 #include <condition_variable>
 #include <mutex>
 #include <set>
@@ -617,32 +618,91 @@ private:
         return std::hypot(dx, dy) <= radius;
     }
 
+    std::vector<std::string> missing_observed_objects(
+            const ur_task_planner::msg::ObservedScene& observation) const {
+        std::vector<std::string> missing;
+        for (const auto& entry : objects_) {
+            if (entry.first != held_object_ &&
+                std::find(observation.object_names.begin(), observation.object_names.end(),
+                          entry.first) == observation.object_names.end()) {
+                missing.push_back(entry.first);
+            }
+        }
+        return missing;
+    }
+
+    ur_task_planner::ObservationResult wait_for_complete_observation(
+            ur_task_planner::msg::ObservedScene::SharedPtr& observation) {
+        const auto started = this->now();
+        const auto deadline = std::chrono::steady_clock::now() +
+            std::chrono::duration<double>(observation_timeout_);
+        std::unique_lock<std::mutex> lock(observation_mutex_);
+        const auto fresh = [&]() {
+            return latest_observation_ &&
+                rclcpp::Time(latest_observation_->header.stamp, started.get_clock_type()) > started;
+        };
+        // Each attempt starts after any recovery motion; pre-motion images cannot satisfy it.
+        if (observation_changed_.wait_until(lock, deadline, [&]() {
+                return fresh() && missing_observed_objects(*latest_observation_).empty();
+            })) {
+            observation = latest_observation_;
+            return {"SUCCESS", ""};
+        }
+        if (!fresh()) {
+            return {"OBSERVATION_FAILED", "no fresh RGB-D observation; check camera, TF and /clock"};
+        }
+        if (latest_observation_->header.frame_id != "gazebo_world" ||
+            latest_observation_->object_names.size() != latest_observation_->poses.size()) {
+            return {"OBSERVATION_FAILED", "invalid observation frame or pose list"};
+        }
+        std::ostringstream detail;
+        detail << "fresh RGB-D image is missing cubes: ";
+        bool first = true;
+        for (const auto& name : missing_observed_objects(*latest_observation_)) {
+            detail << (first ? "" : ", ") << name;
+            first = false;
+        }
+        detail << "; holding: " << (held_object_.empty() ? "none" : held_object_);
+        RCLCPP_WARN(this->get_logger(), "%s", detail.str().c_str());
+        return {"OBSERVATION_FAILED", detail.str(), true};
+    }
+
+    ur_task_planner::ObservationResult clear_camera_view() {
+        // Home changes only arm joints. Keep the gripper closed and its collision object attached.
+        for (const auto& entry : objects_) {
+            if (entry.first != held_object_ && entry.second.location == LOCATION_UNKNOWN) {
+                return {"OBSERVATION_FAILED", "cannot clear camera view: no confirmed pose for " + entry.first};
+            }
+        }
+        RCLCPP_INFO(this->get_logger(), "Moving arm to home to clear camera view (holding: '%s')",
+                    held_object_.c_str());
+        if (!held_object_.empty() && verify_grasp_ && !object_between_fingers()) {
+            const auto lost = object_lost();
+            return {lost.status, lost.message};
+        }
+        const Result movement = execute_home();
+        if (!movement.ok()) {
+            return {movement.status, "could not clear camera view: " + movement.message};
+        }
+        if (!held_object_.empty() && verify_grasp_ && !object_between_fingers()) {
+            const auto lost = object_lost();
+            return {lost.status, lost.message};
+        }
+        return {"SUCCESS", ""};
+    }
+
     Result execute_observe() {
         if (!use_perception_) {
             // Legacy world: the configured geometry and successful skills own the state.
             return {"SUCCESS", "configured scene (camera observation disabled)"};
         }
         observed_ = false;
-        const auto started = this->now();
-        const auto deadline = std::chrono::steady_clock::now() +
-            std::chrono::duration<double>(observation_timeout_);
         ur_task_planner::msg::ObservedScene::SharedPtr observation;
-        {
-            std::unique_lock<std::mutex> lock(observation_mutex_);
-            // Require an image captured AFTER this request, not merely a recently delivered image.
-            if (!observation_changed_.wait_until(lock, deadline, [&]() {
-                    if (!latest_observation_ ||
-                        rclcpp::Time(latest_observation_->header.stamp, started.get_clock_type()) <= started) return false;
-                    for (const auto& entry : objects_) {
-                        if (entry.first != held_object_ &&
-                            std::find(latest_observation_->object_names.begin(), latest_observation_->object_names.end(),
-                                      entry.first) == latest_observation_->object_names.end()) return false;
-                    }
-                    return true;
-                })) {
-                return {"OBSERVATION_FAILED", "no complete fresh RGB-D observation; cube occluded or camera/TF unavailable"};
-            }
-            observation = latest_observation_;
+        const auto result = ur_task_planner::observe_with_recovery(
+            [&]() { return wait_for_complete_observation(observation); },
+            [&]() { return clear_camera_view(); });
+        if (!result.ok()) {
+            return {result.status, result.message};
         }
         if (observation->header.frame_id != "gazebo_world" ||
             observation->object_names.size() != observation->poses.size()) {

@@ -133,8 +133,11 @@ source ~/workspaces/ur_gz/install/setup.bash
 ros2 topic echo /scene_state --full-length
 ```
 
-Nếu báo `OBSERVATION_FAILED`, kiểm tra camera/TF và xem cube có bị che khuất
-không. Robot chỉ tiếp tục khi quan sát đủ các cube cần xác nhận.
+Nếu đã có pose xác nhận nhưng ảnh mới thiếu cube, executor ghi tên cube thiếu
+và tự đưa tay về `home`
+để camera nhìn rõ, giữ nguyên kẹp nếu đang cầm cube, rồi chờ ảnh mới để quan sát
+lại một lần. Nếu vẫn báo `OBSERVATION_FAILED`, kiểm tra tên cube thiếu trong log,
+camera/TF và `/clock`. Robot chỉ tiếp tục khi quan sát đủ các cube cần xác nhận.
 
 Dừng chương trình bằng **Ctrl+C ở terminal 2, rồi terminal 1**.
 
@@ -209,6 +212,8 @@ Sau khi home, planner quan sát lần cuối để xác nhận các đích đặ
 Nhận diện hiện dành cho 5 cube màu đã biết, cạnh 5 cm, đặt riêng trên bàn hoặc
 khay, với camera RGB/depth đã đăng ký cùng frame. Zone lấy kích thước/tọa độ khay
 đã hiệu chuẩn trong `scene_depth.yaml`. Cube bị che khuất, depth/TF thiếu hoặc
-không đủ quan sát sẽ trả `OBSERVATION_FAILED` và dừng kế hoạch; không suy ra zone
-trống từ việc thiếu cube. Chưa hỗ trợ vật lạ, cube xếp chồng hay tự chuyển camera
-để tìm cube bị che. Nếu thay hình học bàn/camera/zone, cần cập nhật cấu hình/TF.
+không đủ quan sát sau bước đưa tay về `home` sẽ trả `OBSERVATION_FAILED` và dừng
+kế hoạch; không suy ra zone trống từ việc thiếu cube. Nếu camera không có ảnh mới
+hoặc TF lỗi, executor dừng ngay mà không di chuyển để phục hồi góc nhìn. Chưa hỗ trợ
+vật lạ, cube xếp chồng hay tự chuyển camera để tìm cube bị che. Nếu thay hình học
+bàn/camera/zone, cần cập nhật cấu hình/TF.

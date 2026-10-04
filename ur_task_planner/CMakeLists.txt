@@ -25,6 +25,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
 
 add_executable(skill_executor_node src/skill_executor_node.cpp)
 target_compile_features(skill_executor_node PUBLIC cxx_std_17)
+target_include_directories(skill_executor_node PRIVATE include)
 ament_target_dependencies(skill_executor_node
   rclcpp
   std_msgs
@@ -65,6 +66,11 @@ install(DIRECTORY
 )
 
 if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_observation_recovery test/test_observation_recovery.cpp)
+  target_include_directories(test_observation_recovery PRIVATE include)
+  target_compile_features(test_observation_recovery PUBLIC cxx_std_17)
+
   find_package(ament_cmake_pytest REQUIRED)
   ament_add_pytest_test(test_llm_occupancy test/test_llm_occupancy.py)
   ament_add_pytest_test(test_scene_observation test/test_scene_observation.py)
