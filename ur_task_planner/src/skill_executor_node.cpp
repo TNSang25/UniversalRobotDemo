@@ -159,6 +159,7 @@ private:
 
     double tcp_offset_;
     double approach_distance_;
+    double zone_pick_approach_distance_;
     double place_approach_distance_;
     double place_clearance_;
     double collision_margin_;
@@ -250,8 +251,12 @@ private:
 
         tcp_offset_ = param("tcp_offset", 0.20);
         approach_distance_ = param("approach_distance", 0.10);
-        // The trays are near UR3e's reach limit. A 10 cm place hover above
-        // zone A/C has no IK even though the release pose is reachable.
+        // Both picking and placing need a lower hover at the outer trays:
+        // a 10 cm hover has no IK even though the cube itself is reachable.
+        zone_pick_approach_distance_ = param("zone_pick_approach_distance", 0.05);
+        if (!std::isfinite(zone_pick_approach_distance_) || zone_pick_approach_distance_ <= 0.0) {
+            throw std::runtime_error("zone_pick_approach_distance must be a positive finite number");
+        }
         place_approach_distance_ = param("place_approach_distance", 0.05);
         if (!std::isfinite(place_approach_distance_) || place_approach_distance_ <= 0.0) {
             throw std::runtime_error("place_approach_distance must be a positive finite number");
@@ -826,9 +831,14 @@ private:
         if (it->second.location == LOCATION_UNKNOWN) {
             return {"OBJECT_LOST", "the position of '" + object_name + "' is unknown"};
         }
-        const Box& box = it->second.box;
-        return move_arm(tool_pose(box.x, box.y, box.z + tcp_offset_ + approach_distance_, grasp_yaw(box)),
+        return move_arm(pick_hover_pose(it->second),
                         "move above " + object_name);
+    }
+
+    geometry_msgs::msg::Pose pick_hover_pose(const Object& object) const {
+        const double distance = zones_.count(object.location) ? zone_pick_approach_distance_ : approach_distance_;
+        const Box& box = object.box;
+        return tool_pose(box.x, box.y, box.z + tcp_offset_ + distance, grasp_yaw(box));
     }
 
     Result execute_move_to_zone(const std::string& zone_name) {
@@ -858,8 +868,7 @@ private:
         // The finger tips go down to the centre of the object
         const geometry_msgs::msg::Pose grasp_pose =
             tool_pose(object.box.x, object.box.y, object.box.z + tcp_offset_, grasp_yaw(object.box));
-        geometry_msgs::msg::Pose hover_pose = grasp_pose;
-        hover_pose.position.z += approach_distance_;
+        const geometry_msgs::msg::Pose hover_pose = pick_hover_pose(object);
 
         Result result = move_gripper(gripper_open_position_, "open gripper");
         if (!result.ok()) return result;

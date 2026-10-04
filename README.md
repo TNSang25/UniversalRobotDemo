@@ -205,12 +205,15 @@ giới hạn tầm với và cập nhật vị trí sau từng bước. Nếu k�
 lỗi lại cho LLM để sửa tối đa hai lần trước khi thực thi. Executor kiểm tra lại
 ảnh mới trước mỗi thao tác gắp/đặt; `place_on_table` cũng kiểm tra khoảng hở tại
 thời điểm thực thi. MoveIt kiểm tra đường đi và khả năng đến pose cụ thể.
-Khoảng nâng phía trên pose gắp là `approach_distance=0.10` m; khi đặt dùng
+Gắp cube trên bàn dùng `approach_distance=0.10` m; gắp cube trong zone (kể cả
+`move_above`) dùng `zone_pick_approach_distance=0.05` m. Khi đặt dùng
 `place_approach_distance=0.05` m. Zone A/C ở gần giới hạn tầm với của UR3e:
-hover đặt cao 10 cm có thể không có nghiệm IK dù pose thả cube vẫn tới được.
+hover cao 10 cm có thể không có nghiệm IK dù pose gắp/thả cube vẫn tới được.
 MoveIt tiếp tục kiểm tra va chạm cho cả đường tới hover và đường hạ xuống.
 Sau khi home, planner quan sát lần cuối để xác nhận các đích đặt trước khi báo
-`SUCCESS`. Xem trạng thái bằng `ros2 topic echo /scene_state --full-length` và
+`SUCCESS`. Cube ở chỗ tạm phải nằm trên bàn và sai lệch không quá 2 cm theo mỗi
+trục X/Y so với vị trí LLM chọn; nếu vượt ngưỡng sẽ báo `VERIFICATION_FAILED`.
+Xem trạng thái bằng `ros2 topic echo /scene_state --full-length` và
 `ros2 topic echo /task_status --full-length`.
 
 Nhận diện hiện dành cho 5 cube màu đã biết, cạnh 5 cm, đặt riêng trên bàn hoặc
