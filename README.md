@@ -205,6 +205,10 @@ giới hạn tầm với và cập nhật vị trí sau từng bước. Nếu k�
 lỗi lại cho LLM để sửa tối đa hai lần trước khi thực thi. Executor kiểm tra lại
 ảnh mới trước mỗi thao tác gắp/đặt; `place_on_table` cũng kiểm tra khoảng hở tại
 thời điểm thực thi. MoveIt kiểm tra đường đi và khả năng đến pose cụ thể.
+Khoảng nâng phía trên pose gắp là `approach_distance=0.10` m; khi đặt dùng
+`place_approach_distance=0.05` m. Zone A/C ở gần giới hạn tầm với của UR3e:
+hover đặt cao 10 cm có thể không có nghiệm IK dù pose thả cube vẫn tới được.
+MoveIt tiếp tục kiểm tra va chạm cho cả đường tới hover và đường hạ xuống.
 Sau khi home, planner quan sát lần cuối để xác nhận các đích đặt trước khi báo
 `SUCCESS`. Xem trạng thái bằng `ros2 topic echo /scene_state --full-length` và
 `ros2 topic echo /task_status --full-length`.

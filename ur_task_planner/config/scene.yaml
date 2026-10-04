@@ -69,6 +69,7 @@
 
     # Gripper geometry and motion tuning (skill_executor_node)
     tcp_offset: 0.20               # tool0 -> finger tip distance [m]
+    place_approach_distance: 0.05   # lower place hover keeps far zones within UR3e reach [m]
     approach_distance: 0.10        # height of the hover pose above the grasp pose [m]
     place_clearance: 0.003         # release height above the zone surface [m]
     collision_margin: 0.002        # objects are shrunk by this much in the planning scene [m]

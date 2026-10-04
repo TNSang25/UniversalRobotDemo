@@ -159,6 +159,7 @@ private:
 
     double tcp_offset_;
     double approach_distance_;
+    double place_approach_distance_;
     double place_clearance_;
     double collision_margin_;
     double gripper_open_position_;
@@ -249,6 +250,12 @@ private:
 
         tcp_offset_ = param("tcp_offset", 0.20);
         approach_distance_ = param("approach_distance", 0.10);
+        // The trays are near UR3e's reach limit. A 10 cm place hover above
+        // zone A/C has no IK even though the release pose is reachable.
+        place_approach_distance_ = param("place_approach_distance", 0.05);
+        if (!std::isfinite(place_approach_distance_) || place_approach_distance_ <= 0.0) {
+            throw std::runtime_error("place_approach_distance must be a positive finite number");
+        }
         place_clearance_ = param("place_clearance", 0.003);
         collision_margin_ = param("collision_margin", 0.002);
         gripper_open_position_ = param("gripper_open_position", 0.0);
@@ -831,7 +838,7 @@ private:
         }
         const Zone& zone = it->second;
         const double half_height = held_object_.empty() ? 0.025 : objects_.at(held_object_).box.size_z / 2.0;
-        const double z = zone.z + half_height + place_clearance_ + tcp_offset_ + approach_distance_;
+        const double z = zone.z + half_height + place_clearance_ + tcp_offset_ + place_approach_distance_;
         return move_arm(tool_pose(zone.x, zone.y, z, 0.0), "move to " + zone_name);
     }
 
@@ -922,7 +929,7 @@ private:
         const geometry_msgs::msg::Pose place_pose =
             tool_pose(zone.x, zone.y, rest_z + place_clearance_ + tcp_offset_, 0.0);
         geometry_msgs::msg::Pose hover_pose = place_pose;
-        hover_pose.position.z += approach_distance_;
+        hover_pose.position.z += place_approach_distance_;
 
         Result result = move_arm(hover_pose, "move to " + label);
         if (!result.ok()) return result;

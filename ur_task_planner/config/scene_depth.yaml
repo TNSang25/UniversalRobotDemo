@@ -175,6 +175,7 @@
         - 0.01
     tcp_offset: 0.2
     approach_distance: 0.1
+    place_approach_distance: 0.05
     place_clearance: 0.003
     collision_margin: 0.002
     gripper_open_position: 0.0
