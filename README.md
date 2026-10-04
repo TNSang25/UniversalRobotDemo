@@ -9,7 +9,7 @@ Ví dụ: **"Đưa khối màu đỏ vào vùng B."**
 |---|---|
 | `ur_description` | Mô hình URDF của các dòng tay máy UR |
 | `ur_onrobot` | UR3e gắn tay kẹp hai ngón, cấu hình controller |
-| `ur_simulation_gz` | Thế giới Gazebo (bàn, 3 khối, 3 khay A/B/C) và launch mô phỏng |
+| `ur_simulation_gz` | Thế giới Gazebo (bàn, 5 cube, 3 zone A/B/C), camera RGB-D và launch mô phỏng |
 | `ur_task_planner` | Robot skill, LLM planner, plan validator |
 | `ur_trajectory_drawer` | Vẽ hình tròn và chữ S, xem README ở nhánh `main` |
 
@@ -63,18 +63,25 @@ Thấy `Installation OK` là có thể chuyển sang bước chạy.
 
 ## 4. Chạy chương trình
 
-**Terminal 1 — mở mô phỏng:**
+Chạy mô phỏng RGB-D với **5 cube: đỏ, xanh dương, vàng, xanh lá, hồng** và
+**3 zone A/B/C**. Robot quan sát cube qua camera trước khi lập kế hoạch.
+Nếu zone đích đang có cube khác, LLM chọn vị trí tạm trên bàn để dọn cube đó
+ra trước, rồi mới đặt cube được yêu cầu vào zone.
+
+**Terminal 1 — mở mô phỏng và camera RGB-D:**
 
 ```bash
 cd ~/workspaces/ur_gz
 export PYTHONNOUSERSITE=1
 source install/setup.bash
-ros2 launch ur_simulation_gz ur3e_rg2_table.launch.py launch_rviz:=false
+ros2 launch ur_simulation_gz ur3e_rg2_table_depth.launch.py launch_rviz:=false
 ```
 
 Đợi ba controller báo `Configured and activated`, rồi mở terminal 2.
+Mỗi lần chạy, vị trí và góc yaw của 5 cube được sinh ngẫu nhiên.
+Muốn lặp lại một bố cục để debug, thêm `random_seed:=42` vào lệnh launch.
 
-**Terminal 2 — mở bộ điều khiển:**
+**Terminal 2 — mở bộ quan sát, skill executor và LLM planner:**
 
 Thay `YOUR_API_KEY` bằng Gemini API key của bạn:
 
@@ -82,11 +89,12 @@ Thay `YOUR_API_KEY` bằng Gemini API key của bạn:
 cd ~/workspaces/ur_gz
 export PYTHONNOUSERSITE=1
 source install/setup.bash
-export GEMINI_API_KEY=''
-ros2 launch ur_task_planner task_planner.launch.py
+export GEMINI_API_KEY='YOUR_API_KEY'
+ros2 launch ur_task_planner task_planner.launch.py \
+  scene_file:=scene_depth.yaml launch_observer:=true
 ```
 
-Đợi dòng `Skill Executor Node ready.`
+Đợi dòng `Skill Executor Node ready.` trước khi gửi lệnh.
 
 **Terminal 3 — gửi lệnh:**
 
@@ -94,19 +102,39 @@ ros2 launch ur_task_planner task_planner.launch.py
 export PYTHONNOUSERSITE=1
 source ~/workspaces/ur_gz/install/setup.bash
 ros2 topic pub --once /user_command std_msgs/msg/String \
-  "{data: 'Đưa khối màu đỏ vào vùng B.'}"
+  "{data: 'Đưa cube đỏ vào zone B.'}"
 ```
 
-Có thể đổi câu lệnh. Robot có khối **đỏ, xanh dương, vàng** và vùng **A, B, C**.
-Gửi từng lệnh một và đợi robot làm xong trước khi gửi lệnh tiếp theo.
+Theo dõi `/task_status` ở terminal 4 bên dưới. Đợi lệnh đầu báo `SUCCESS`,
+sau đó gửi lệnh tiếp theo trong terminal 3:
 
-Muốn xem kết quả, mở thêm terminal và chạy:
+```bash
+ros2 topic pub --once /user_command std_msgs/msg/String \
+  "{data: 'Đưa cube xanh dương vào zone B.'}"
+```
+
+Robot phải gắp cube đỏ ra chỗ tạm do LLM chọn, rồi đưa cube xanh dương vào B.
+Có thể đổi màu cube và zone trong câu lệnh. Gửi từng lệnh một, đợi robot hoàn tất
+trước khi gửi lệnh tiếp theo.
+
+**Terminal 4 — theo dõi kết quả (mở trước khi gửi lệnh):**
 
 ```bash
 export PYTHONNOUSERSITE=1
 source ~/workspaces/ur_gz/install/setup.bash
 ros2 topic echo /task_status --full-length
 ```
+
+Muốn xem vị trí cube và cube đang chiếm từng zone, mở thêm terminal và chạy:
+
+```bash
+export PYTHONNOUSERSITE=1
+source ~/workspaces/ur_gz/install/setup.bash
+ros2 topic echo /scene_state --full-length
+```
+
+Nếu báo `OBSERVATION_FAILED`, kiểm tra camera/TF và xem cube có bị che khuất
+không. Robot chỉ tiếp tục khi quan sát đủ các cube cần xác nhận.
 
 Dừng chương trình bằng **Ctrl+C ở terminal 2, rồi terminal 1**.
 
@@ -116,16 +144,7 @@ World mới `ur_simulation_gz/world/ur_table_depth.sdf` được tạo từ `ur_
 giữ bàn, 3 cube cũ; dịch 3 zone A/B/C cùng chữ tương ứng ra xa robot 5 cm
 (+X, tâm zone ở X=0.10 m); thêm cube **xanh lá**, **hồng** và một camera
 RGB-D cố định ở `(0, 0, 1.6)` m, nhìn xuống mặt bàn cao 0.8 m. Các cube đều có
-cạnh 5 cm. Launch bên dưới spawn một UR3e kèm gripper RG2 và bật bridge camera:
-
-```bash
-cd ~/workspaces/ur_gz
-source /opt/ros/humble/setup.bash
-export PYTHONNOUSERSITE=1
-colcon build --packages-select ur_simulation_gz
-source install/setup.bash
-ros2 launch ur_simulation_gz ur3e_rg2_table_depth.launch.py
-```
+cạnh 5 cm. Launch ở phần 4 spawn một UR3e kèm gripper RG2 và bật bridge camera.
 
 Camera phát dữ liệu 640×480 ở 15 Hz theo thời gian mô phỏng:
 
@@ -168,34 +187,7 @@ và depth theo timestamp, nhận diện màu, đo tâm/yaw cube và chuyển qua
 `gazebo_world`. Skill `observe` cập nhật collision scene của MoveIt và trạng thái
 zone dựa trên footprint cube. Tọa độ spawn ngẫu nhiên không được truyền vào planner.
 
-Build lại vì `ExecuteSkill` đã thêm trường `position` và snapshot `scene_state`:
-
-```bash
-cd ~/workspaces/ur_gz
-source /opt/ros/humble/setup.bash
-export PYTHONNOUSERSITE=1
-rosdep install --from-paths src --ignore-src --rosdistro humble -y
-colcon build --packages-select ur_task_planner ur_simulation_gz
-source install/setup.bash
-```
-
-Terminal 1 chạy mô phỏng camera như phần trên. Terminal 2 chạy planner:
-
-```bash
-source ~/workspaces/ur_gz/install/setup.bash
-export GEMINI_API_KEY='YOUR_API_KEY'
-ros2 launch ur_task_planner task_planner.launch.py \
-  scene_file:=scene_depth.yaml launch_observer:=true
-```
-
-Ví dụ gửi lần lượt hai lệnh, đợi `/task_status` báo hoàn tất từng lệnh:
-
-```bash
-ros2 topic pub --once /user_command std_msgs/msg/String \
-  "{data: 'Đưa cube đỏ vào zone B.'}"
-ros2 topic pub --once /user_command std_msgs/msg/String \
-  "{data: 'Đưa cube xanh dương vào zone B.'}"
-```
+Hai lệnh ví dụ ở phần 4 minh họa việc tự dọn zone trước khi đặt cube mới.
 
 Ở lệnh thứ hai, LLM nhận trạng thái zone B có cube đỏ và phải lập kế hoạch:
 `pick(red_cube)` → `place_on_table(red_cube, [x, y])` → `pick(blue_cube)` →
@@ -220,6 +212,3 @@ khay, với camera RGB/depth đã đăng ký cùng frame. Zone lấy kích thư�
 không đủ quan sát sẽ trả `OBSERVATION_FAILED` và dừng kế hoạch; không suy ra zone
 trống từ việc thiếu cube. Chưa hỗ trợ vật lạ, cube xếp chồng hay tự chuyển camera
 để tìm cube bị che. Nếu thay hình học bàn/camera/zone, cần cập nhật cấu hình/TF.
-
-World cũ vẫn chạy bằng `task_planner.launch.py` mặc định với `scene.yaml`: hỗ trợ
-đặt tạm và dọn zone theo trạng thái skill, nhưng không có đo camera.
